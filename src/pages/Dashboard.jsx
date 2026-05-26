@@ -59,9 +59,9 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const thisMonthTx = transactions.filter(tx => !tx.excluded && txInMonth(tx, currentMonth));
-    const income    = thisMonthTx.filter(t => t.type === 'Income').reduce((s, t) => s + Number(t.amount), 0);
-    const expenses  = thisMonthTx.filter(t => t.type === 'Expense' && t.category !== 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
-    const ownerDraw = thisMonthTx.filter(t => t.type === 'Expense' && t.category === 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
+    const income          = thisMonthTx.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const expenses        = thisMonthTx.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const cashFlowSupport = thisMonthTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
 
     // Occupancy for current month
     const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
@@ -77,9 +77,11 @@ export default function Dashboard() {
     }
     const occupancyRate = daysInMonth > 0 ? Math.min(occupiedNights / daysInMonth * 100, 100) : 0;
 
-    // ADR - this month's rental income / nights this month
-    const rentalIncome = thisMonthTx.filter(t => t.category === 'Rental Income').reduce((s, t) => s + Number(t.amount), 0);
-    const adr = occupiedNights > 0 ? rentalIncome / occupiedNights : 0;
+    // Net ADR — net rent / nights this month from reservations
+    const monthRes = reservations.filter(r => r.status !== 'Cancelled' && r.checkIn?.startsWith(currentMonth));
+    const monthNetRent = monthRes.reduce((s, r) => s + (Number(r.netRent) || 0), 0);
+    const monthNights  = monthRes.reduce((s, r) => s + (Number(r.nights) || 0), 0);
+    const adr = monthNights > 0 ? monthNetRent / monthNights : 0;
 
     // Unpaid taxes
     const taxPaid = new Map();
@@ -95,21 +97,20 @@ export default function Dashboard() {
         return s + Math.max(Number(t.annualAmount) - (taxPaid.get(key) || 0), 0);
       }, 0);
 
-    return { income, expenses, ownerDraw, netCashflow: income - expenses, occupancyRate, adr, unpaidTaxes, occupiedNights };
+    return { income, expenses, netCashflow: income - expenses, cashFlowSupport, occupancyRate, adr, unpaidTaxes, occupiedNights };
   }, [transactions, reservations, propertyTaxes, currentMonth, currentMonthIdx, currentYear, today]);
 
   const monthlyData = useMemo(() => MONTHS.map((label, mi) => {
     const month = `${currentYear}-${String(mi + 1).padStart(2, '0')}`;
     const txs = transactions.filter(t => !t.excluded && txInMonth(t, month));
-    const income   = txs.filter(t => t.type === 'Income').reduce((s, t) => s + amountForMonth(t, month), 0);
-    const expenses = txs.filter(t => t.type === 'Expense' && t.category !== 'Owner Draw').reduce((s, t) => s + amountForMonth(t, month), 0);
-    const ownerDraw = txs.filter(t => t.type === 'Expense' && t.category === 'Owner Draw').reduce((s, t) => s + amountForMonth(t, month), 0);
+    const income   = txs.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0);
+    const expenses = txs.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0);
     const net = income - expenses;
     const isFuture = mi > currentMonthIdx;
-    return { label, income, expenses, ownerDraw, net, isFuture };
+    return { label, income, expenses, net, isFuture };
   }), [transactions, currentYear, currentMonthIdx]);
 
-  const maxVal = Math.max(...monthlyData.map(m => Math.max(m.income, m.expenses + m.ownerDraw)), 1);
+  const maxVal = Math.max(...monthlyData.map(m => Math.max(m.income, m.expenses)), 1);
 
   const recentTransactions = useMemo(() =>
     [...transactions].filter(tx => !tx.excluded).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6),
@@ -132,9 +133,6 @@ export default function Dashboard() {
     return 'bg-red-400/10 text-red-400';
   };
 
-  const platformColor = (p) => ({
-    Airbnb: 'text-red-400', VRBO: 'text-blue-400', Direct: 'text-emerald-400', Other: 'text-slate-400',
-  }[p] || 'text-slate-400');
 
   return (
     <div className="p-8">
@@ -144,11 +142,13 @@ export default function Dashboard() {
       </div>
 
       {/* Finance KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className={`grid gap-4 mb-4 ${stats.cashFlowSupport > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <StatCard icon={TrendingUp}   label="Monthly Income"   value={fmtFull(stats.income)}      sub="This month"       color="emerald" />
-        <StatCard icon={TrendingDown} label="Monthly Expenses" value={fmtFull(stats.expenses)}    sub="Excl. owner draw" color="red" />
-        <StatCard icon={DollarSign}   label="Owner Draw"       value={fmtFull(stats.ownerDraw)}   sub="This month"       color="purple" />
+        <StatCard icon={TrendingDown} label="Monthly Expenses" value={fmtFull(stats.expenses)}    sub="This month"       color="red" />
         <StatCard icon={DollarSign}   label="Net Cashflow"     value={fmtFull(stats.netCashflow)} sub="This month"       color={stats.netCashflow >= 0 ? 'emerald' : 'red'} />
+        {stats.cashFlowSupport > 0 && (
+          <StatCard icon={DollarSign} label="Cash Flow Support" value={fmtFull(stats.cashFlowSupport)} sub="Owner contributions" color="yellow" />
+        )}
       </div>
 
       {/* STR KPIs */}
@@ -165,7 +165,6 @@ export default function Dashboard() {
           <div className="flex items-center gap-4 text-xs text-slate-400">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-500/80 inline-block" /> Income</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500/80 inline-block" /> Expenses</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-purple-500/80 inline-block" /> Owner Draw</span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -176,14 +175,12 @@ export default function Dashboard() {
             {monthlyData.map((m, i) => {
               const iH = maxVal > 0 ? (m.income / maxVal) * 100 : 0;
               const eH = maxVal > 0 ? (m.expenses / maxVal) * 100 : 0;
-              const oH = maxVal > 0 ? (m.ownerDraw / maxVal) * 100 : 0;
               const isCurrentMonth = i === currentMonthIdx;
               return (
                 <div key={i} className={`${m.isFuture ? 'opacity-30' : ''} ${isCurrentMonth ? 'ring-1 ring-slate-500/40 rounded-lg' : ''} group relative`}>
                   <div className="flex gap-0.5 h-44">
                     <div className="flex-1 flex flex-col justify-end"><div className="bg-emerald-500/80 rounded-t transition-all" style={{ height: `${iH}%` }} /></div>
                     <div className="flex-1 flex flex-col justify-end"><div className="bg-red-500/80 rounded-t transition-all" style={{ height: `${eH}%` }} /></div>
-                    <div className="flex-1 flex flex-col justify-end"><div className="bg-purple-500/80 rounded-t transition-all" style={{ height: `${oH}%` }} /></div>
                   </div>
                   <div className="text-xs text-center text-slate-500 mt-1">{m.label}</div>
                   {(m.income > 0 || m.expenses > 0) && (
@@ -196,7 +193,6 @@ export default function Dashboard() {
                       <div className="text-slate-300 font-medium mb-1">{m.label} {currentYear}</div>
                       <div className="flex justify-between text-emerald-400"><span>Income</span><span>{fmt(m.income)}</span></div>
                       <div className="flex justify-between text-red-400"><span>Expenses</span><span>{fmt(m.expenses)}</span></div>
-                      {m.ownerDraw > 0 && <div className="flex justify-between text-purple-400"><span>Owner Draw</span><span>{fmt(m.ownerDraw)}</span></div>}
                       <div className={`flex justify-between font-semibold border-t border-navy-700 mt-1 pt-1 ${m.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         <span>Net</span><span>{m.net >= 0 ? '+' : '-'}{fmt(m.net)}</span>
                       </div>
@@ -244,10 +240,9 @@ export default function Dashboard() {
                 <div>
                   <div className="text-sm text-white">{r.guestName}</div>
                   <div className="text-xs text-slate-500">{r.checkIn} – {r.checkOut} · {r.nights} nights</div>
-                  <div className={`text-xs mt-0.5 ${platformColor(r.platform)}`}>{r.platform}</div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-emerald-400">{fmtFull(r.totalRevenue)}</span>
+                  <span className="text-sm text-emerald-400">{fmtFull(r.netRent || 0)}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(r)}`}>{reservationStatus(r, today)}</span>
                 </div>
               </div>

@@ -16,6 +16,8 @@ export const defaultProperty = {
   hoaUrl: '',
 };
 
+export const sampleOwners = [];
+
 export const sampleReservations = [];
 
 export const sampleTransactions = [];
@@ -25,30 +27,22 @@ export const samplePropertyTaxes = [];
 export const sampleHOADues = [];
 
 export const TRANSACTION_CATEGORIES = [
-  'Rental Income',
-  'Cleaning Fee Income',
-  'Pet Fee Income',
-  'Security Deposit',
-  'Damage Fee',
-  'Late Cancellation Fee',
-  'Other Income',
-  'Mortgage',
-  'Property Tax',
-  'Insurance',
-  'HOA Fees',
-  'Utilities',
-  'Internet / Cable',
-  'Repairs & Maintenance',
-  'Landscaping',
-  'Pool / Hot Tub',
-  'Cleaning / Housekeeping',
-  'Linens & Supplies',
-  'Platform Fees',
-  'Management Fees',
-  'Professional Services',
   'Advertising',
-  'Owner Draw',
+  'Cash Flow Support',
+  'Cleaning / Housekeeping',
+  'HOA Fees',
+  'Insurance',
+  'Internet / Cable',
+  'Landscaping',
+  'Linens & Supplies',
+  'Management Fees',
+  'Mortgage',
   'Other Expense',
+  'Other Income',
+  'Professional Services',
+  'Property Tax',
+  'Rental Income',
+  'Repairs & Maintenance',
+  'Utilities',
 ];
 
-export const STR_PLATFORMS = ['Airbnb', 'VRBO', 'Direct', 'Other'];

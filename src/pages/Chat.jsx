@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Bot, User, Trash2 } from 'lucide-react';
+import { Send, Bot, User, Trash2, Key, X } from 'lucide-react';
+
+const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sampleTransactions, sampleReservations, samplePropertyTaxes, sampleHOADues, defaultProperty } from '../data/sampleData';
 
@@ -15,7 +17,6 @@ const FREE_MODELS = [
 
 const SUGGESTED = [
   'What is my total revenue from reservations this year?',
-  'Which platform generates the most income: Airbnb, VRBO, or Direct?',
   'What is my occupancy rate for this year?',
   'Summarize my income and expenses for this year',
   'What STR tax deductions should I be aware of in Texas?',
@@ -34,21 +35,15 @@ function buildContext(property, reservations, transactions, taxes, hoa) {
   const resLines = reservations.map(r => {
     const nights = r.nights || 0;
     const status = r.checkOut < today ? 'Complete' : r.checkIn <= today ? 'Active' : 'Upcoming';
-    return `  • ${r.guestName} (${r.platform}) | ${r.checkIn} – ${r.checkOut} | ${nights} nights | ${fmtM(r.totalRevenue)} | ${status}`;
+    return `  • ${r.guestName} | ${r.checkIn} – ${r.checkOut} | ${nights} nights | Gross: ${fmtM(r.grossRent)} | Net: ${fmtM(r.netRent)} | ${status}`;
   }).join('\n');
 
-  // Platform breakdown
-  const platformRevenue = {};
-  for (const r of reservations.filter(r => r.status !== 'Cancelled')) {
-    platformRevenue[r.platform] = (platformRevenue[r.platform] || 0) + Number(r.totalRevenue || 0);
-  }
-  const platformLines = Object.entries(platformRevenue).map(([p, v]) => `  ${p}: ${fmtM(v)}`).join('\n');
 
   // YTD financials
   const yearTx = transactions.filter(t => !t.excluded && t.date.startsWith(String(currentYear)));
-  const income    = yearTx.filter(t => t.type === 'Income').reduce((s, t) => s + Number(t.amount), 0);
-  const expenses  = yearTx.filter(t => t.type === 'Expense' && t.category !== 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
-  const ownerDraw = yearTx.filter(t => t.category === 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
+  const income          = yearTx.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+  const expenses        = yearTx.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+  const cashFlowSupport = yearTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
 
   // Category breakdown
   const byCategory = {};
@@ -68,8 +63,9 @@ function buildContext(property, reservations, transactions, taxes, hoa) {
   const hoaLines = hoa.filter(h => h.annualAmount).map(h => `  • ${h.year} | ${fmtM(h.annualAmount)} due ${h.dueDate || 'unknown'}`).join('\n');
 
   // Occupancy stats
-  const totalNights = reservations.filter(r => r.status !== 'Cancelled').reduce((s, r) => s + (r.nights || 0), 0);
-  const totalRevenue = reservations.filter(r => r.status !== 'Cancelled').reduce((s, r) => s + Number(r.totalRevenue || 0), 0);
+  const totalNights  = reservations.filter(r => r.status !== 'Cancelled').reduce((s, r) => s + (r.nights || 0), 0);
+  const totalGross   = reservations.filter(r => r.status !== 'Cancelled').reduce((s, r) => s + Number(r.grossRent || 0), 0);
+  const totalRevenue = reservations.filter(r => r.status !== 'Cancelled').reduce((s, r) => s + Number(r.netRent || 0), 0);
 
   return `# Warrior Beach House — Finance Data (as of ${today})
 
@@ -79,19 +75,17 @@ ${propLine}
 ## Reservations (${reservations.length} total)
 ${resLines || '  None'}
 
-### Platform Revenue Breakdown
-${platformLines || '  None'}
-
 ### Occupancy Summary
   Total nights booked: ${totalNights}
-  Total reservation revenue: ${fmtM(totalRevenue)}
-  ADR (avg daily rate): ${totalNights > 0 ? fmtM(Math.round(totalRevenue / totalNights)) : '—'}
+  Total gross rent: ${fmtM(totalGross)}
+  Management fees (23%): ${fmtM(Math.round(totalGross * 0.23))}
+  Total net rent (owner): ${fmtM(totalRevenue)}
+  Net ADR (net rent ÷ nights): ${totalNights > 0 ? fmtM(Math.round(totalRevenue / totalNights)) : '—'}
 
 ## ${currentYear} Financials (YTD)
-  Total Income:   ${fmtM(income)}
-  Total Expenses: ${fmtM(expenses)}
-  Owner Draw:     ${fmtM(ownerDraw)}
-  Net Cashflow:   ${fmtM(income - expenses)}
+  Total Income:         ${fmtM(income)}
+  Total Expenses:       ${fmtM(expenses)}
+  Net Cashflow:         ${fmtM(income - expenses)}${cashFlowSupport > 0 ? `\n  Cash Flow Support:    ${fmtM(cashFlowSupport)} (owner contributions — excluded from income/expense)` : ''}
 
 ### Category Breakdown
 ${catLines || '  None'}
@@ -113,6 +107,9 @@ export default function Chat() {
   const [taxes]       = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
   const [hoa]         = useLocalStorage('wbh_hoa_dues', sampleHOADues);
 
+  const [apiKey, setApiKey]     = useLocalStorage('wbh_openrouter_key', '');
+  const [showKey, setShowKey]   = useState(false);
+  const [keyDraft, setKeyDraft] = useState('');
   const [model, setModel]       = useState(FREE_MODELS[0].id);
   const [messages, setMessages] = useState([]);
   const [input, setInput]       = useState('');
@@ -155,9 +152,15 @@ Guidelines:
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      if (!apiKey) throw new Error('OpenRouter API key not set. Click the key icon in the header to add it.');
+      const res = await fetch(OR_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://warrior-beach-house.local',
+          'X-Title': 'Warrior Beach House',
+        },
         body: JSON.stringify({
           model, stream: true, max_tokens: 2048,
           messages: [
@@ -213,9 +216,39 @@ Guidelines:
           <select value={model} onChange={e => setModel(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white">
             {FREE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
+          <button
+            onClick={() => { setShowKey(v => !v); setKeyDraft(apiKey); }}
+            title={apiKey ? 'API key configured — click to change' : 'Set OpenRouter API key'}
+            className={`p-1.5 rounded-lg transition-colors ${apiKey ? 'text-emerald-400 hover:text-emerald-300' : 'text-yellow-400 hover:text-yellow-300 animate-pulse'}`}
+          >
+            <Key size={16} />
+          </button>
           {messages.length > 0 && <button onClick={clearChat} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-300 text-sm"><Trash2 size={14} /> Clear</button>}
         </div>
       </div>
+
+      {showKey && (
+        <div className="px-8 py-3 border-b border-navy-700 bg-navy-800/50 flex items-center gap-3 flex-shrink-0">
+          <Key size={14} className="text-slate-400 flex-shrink-0" />
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={e => setKeyDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { setApiKey(keyDraft); setShowKey(false); } }}
+            placeholder="sk-or-... — get a free key at openrouter.ai/keys"
+            className="flex-1 bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            autoFocus
+          />
+          <button onClick={() => { setApiKey(keyDraft); setShowKey(false); }} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-medium">Save</button>
+          <button onClick={() => setShowKey(false)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+        </div>
+      )}
+
+      {!apiKey && !showKey && (
+        <div className="px-8 py-2.5 bg-yellow-500/10 border-b border-yellow-500/20 flex-shrink-0">
+          <p className="text-yellow-400 text-xs">OpenRouter API key required. <button onClick={() => { setShowKey(true); setKeyDraft(''); }} className="underline hover:text-yellow-300">Click the key icon</button> to add it — free at <span className="font-mono">openrouter.ai/keys</span></p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {messages.length === 0 && (

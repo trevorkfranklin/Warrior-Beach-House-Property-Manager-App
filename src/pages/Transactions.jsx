@@ -1,15 +1,17 @@
 import { useState, useMemo } from 'react';
-import { Plus, Pencil, Trash2, X, Check, Ban, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, Ban, Download, Sparkles } from 'lucide-react';
+
+const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, TRANSACTION_CATEGORIES } from '../data/sampleData';
+import { sampleTransactions, sampleOwners, TRANSACTION_CATEGORIES } from '../data/sampleData';
 import { buildPatternMap, suggest, isUncategorized } from '../utils/categorizer';
 import { useAuth } from '../context/Auth';
 
-const EMPTY = { id: '', date: new Date().toISOString().slice(0, 10), description: '', amount: '', type: 'Expense', category: '', notes: '' };
+const EMPTY = { id: '', date: new Date().toISOString().slice(0, 10), description: '', amount: '', type: 'Expense', category: '', ownerId: '', notes: '' };
 
 const fmtAmt = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function Modal({ title, form, setForm, onSave, onClose }) {
+function Modal({ title, form, setForm, onSave, onClose, owners }) {
   const inputCls = 'w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500';
 
   return (
@@ -45,6 +47,15 @@ function Modal({ title, form, setForm, onSave, onClose }) {
               {TRANSACTION_CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
+          {form.category === 'Cash Flow Support' && owners.length > 0 && (
+            <div className="col-span-2">
+              <label className="text-xs text-slate-400 block mb-1">Owner</label>
+              <select value={form.ownerId || ''} onChange={e => setForm({ ...form, ownerId: e.target.value })} className={inputCls}>
+                <option value="">— Select owner —</option>
+                {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+          )}
           {form.category === 'Property Tax' && (
             <>
               <div>
@@ -82,6 +93,7 @@ function Modal({ title, form, setForm, onSave, onClose }) {
 
 export default function Transactions() {
   const [transactions, setTransactions] = useLocalStorage('wbh_transactions', sampleTransactions);
+  const [owners]            = useLocalStorage('wbh_owners', sampleOwners);
   const [modal, setModal]   = useState(null);
   const [form, setForm]     = useState(EMPTY);
   const { canEdit }         = useAuth();
@@ -109,10 +121,10 @@ export default function Transactions() {
     const base = transactions.filter(t => !t.excluded)
       .filter(t => !filterMonth || t.date.startsWith(filterMonth))
       .filter(t => !filterCategory || t.category === filterCategory);
-    const income    = base.filter(t => t.type === 'Income').reduce((s, t) => s + Number(t.amount), 0);
-    const expenses  = base.filter(t => t.type === 'Expense' && t.category !== 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
-    const ownerDraw = base.filter(t => t.type === 'Expense' && t.category === 'Owner Draw').reduce((s, t) => s + Number(t.amount), 0);
-    return { income, expenses, ownerDraw, net: income - expenses };
+    const income           = base.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const expenses         = base.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const cashFlowSupport  = base.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    return { income, expenses, net: income - expenses, cashFlowSupport };
   }, [transactions, filterMonth, filterCategory]);
 
   const patternMap = useMemo(() => buildPatternMap(transactions), [transactions]);
@@ -140,6 +152,77 @@ export default function Transactions() {
   };
   const remove = (id) => { if (confirm('Delete this transaction?')) setTransactions(prev => prev.filter(t => t.id !== id)); };
 
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+  const [aiError, setAiError]           = useState('');
+
+  const suggestWithAI = async () => {
+    const apiKey = (() => { try { return JSON.parse(localStorage.getItem('wbh_openrouter_key') || '""'); } catch { return ''; } })();
+    if (!apiKey) { setAiError('OpenRouter API key not set — add it in Import → Screenshot first.'); return; }
+
+    const uncategorized = transactions.filter(t => isUncategorized(t) && !t.excluded);
+    if (!uncategorized.length) { setAiError('No uncategorized transactions found.'); return; }
+
+    setAiSuggesting(true); setAiError('');
+    try {
+      // Batch in chunks of 50 to stay within token limits
+      const CHUNK = 50;
+      const allSuggestions = [];
+      for (let i = 0; i < uncategorized.length; i += CHUNK) {
+        const chunk = uncategorized.slice(i, i + CHUNK);
+        const prompt = `You are categorizing bank transactions for a vacation rental property.
+Assign each transaction exactly one category from this list:
+${TRANSACTION_CATEGORIES.join(', ')}
+
+Rules:
+- Use "Rental Income" for vacation rental payouts (Vacasa, Airbnb, VRBO, etc.)
+- Use "Mortgage" for mortgage payments
+- Use "Management Fees" for property management fees
+- Use "Repairs & Maintenance" for repairs, contractors, hardware stores
+- Use "Utilities" for electric, water, gas, trash
+- Use "Insurance" for insurance payments
+- Use "HOA Fees" for HOA payments
+- Use "Cash Flow Support" for cash transfers or contributions from an owner
+- Use "Other Income" or "Other Expense" if nothing else fits
+- Use null only if truly unclassifiable
+
+Return ONLY a JSON array, no explanation:
+[{"id":"...","category":"..."}]
+
+Transactions:
+${chunk.map(t => `{"id":"${t.id}","description":"${t.description}","amount":${t.amount},"type":"${t.type}"}`).join('\n')}`;
+
+        const res = await fetch(OR_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://warrior-beach-house.local',
+            'X-Title': 'Warrior Beach House',
+          },
+          body: JSON.stringify({ model: 'google/gemma-4-31b-it:free', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] }),
+        });
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        const raw  = data.choices?.[0]?.message?.content || '';
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) allSuggestions.push(...JSON.parse(match[0]));
+      }
+
+      let applied = 0;
+      setTransactions(prev => prev.map(t => {
+        const s = allSuggestions.find(s => s.id === t.id);
+        if (!s?.category || !TRANSACTION_CATEGORIES.includes(s.category)) return t;
+        applied++;
+        return { ...t, category: s.category, categorized: true };
+      }));
+      setAiError(`✓ Categorized ${applied} of ${uncategorized.length} transactions.`);
+    } catch (e) {
+      setAiError('AI suggestion failed: ' + e.message);
+    } finally {
+      setAiSuggesting(false);
+    }
+  };
+
   const exportCSV = () => {
     const esc = (v) => { const s = String(v ?? ''); return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const headers = ['Date','Description','Type','Category','Amount','Notes'];
@@ -158,7 +241,7 @@ export default function Transactions() {
       {modal && (
         <Modal
           title={modal === 'add' ? 'Add Transaction' : 'Edit Transaction'}
-          form={form} setForm={setForm} onSave={save} onClose={() => setModal(null)}
+          form={form} setForm={setForm} onSave={save} onClose={() => setModal(null)} owners={owners}
         />
       )}
 
@@ -172,12 +255,24 @@ export default function Transactions() {
             <Download size={14} /> Export CSV
           </button>
           {canEdit && (
+            <button onClick={suggestWithAI} disabled={aiSuggesting} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              <Sparkles size={14} className={aiSuggesting ? 'animate-pulse' : ''} />
+              {aiSuggesting ? 'Suggesting…' : 'AI Suggest'}
+            </button>
+          )}
+          {canEdit && (
             <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
               <Plus size={16} /> Add Transaction
             </button>
           )}
         </div>
       </div>
+
+      {aiError && (
+        <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${aiError.startsWith('✓') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
+          {aiError}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-4 mb-5">
         <label className="flex flex-col gap-1">
@@ -217,11 +312,13 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="flex gap-4 mb-5">
+      <div className="flex gap-4 mb-5 flex-wrap">
         <div className="bg-navy-800 border border-navy-700 rounded-lg px-4 py-2 text-sm"><span className="text-slate-400">Income: </span><span className="text-emerald-400 font-semibold">{fmtAmt(totals.income)}</span></div>
         <div className="bg-navy-800 border border-navy-700 rounded-lg px-4 py-2 text-sm"><span className="text-slate-400">Expenses: </span><span className="text-red-400 font-semibold">{fmtAmt(totals.expenses)}</span></div>
-        <div className="bg-navy-800 border border-navy-700 rounded-lg px-4 py-2 text-sm"><span className="text-slate-400">Owner Draw: </span><span className="text-purple-400 font-semibold">{fmtAmt(totals.ownerDraw)}</span></div>
         <div className="bg-navy-800 border border-navy-700 rounded-lg px-4 py-2 text-sm"><span className="text-slate-400">Net: </span><span className={`font-semibold ${totals.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtAmt(totals.net)}</span></div>
+        {totals.cashFlowSupport > 0 && (
+          <div className="bg-navy-800 border border-yellow-500/30 rounded-lg px-4 py-2 text-sm"><span className="text-slate-400">Cash Flow Support: </span><span className="text-yellow-400 font-semibold">{fmtAmt(totals.cashFlowSupport)}</span></div>
+        )}
       </div>
 
       <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
@@ -245,6 +342,9 @@ export default function Transactions() {
                     {tx.description}{tx.excluded && <span className="ml-2 text-xs text-slate-500 italic">excluded</span>}
                     {tx.category === 'Property Tax' && tx.taxYear && (
                       <div className="text-xs text-slate-500 mt-0.5">Tax year {tx.taxYear}{tx.taxType ? ` — ${tx.taxType}` : ''}</div>
+                    )}
+                    {tx.category === 'Cash Flow Support' && tx.ownerId && (
+                      <div className="text-xs text-slate-500 mt-0.5">{owners.find(o => o.id === tx.ownerId)?.name || '—'}</div>
                     )}
                   </td>
                   <td className="px-5 py-3">

@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
-import { Upload, Check, AlertCircle, RefreshCw, Landmark } from 'lucide-react';
+import { Upload, Check, AlertCircle, RefreshCw, Landmark, Camera, Pencil, Trash2, X } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, TRANSACTION_CATEGORIES } from '../data/sampleData';
+import { sampleTransactions, sampleReservations, TRANSACTION_CATEGORIES } from '../data/sampleData';
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function parseLine(line) {
   const fields = [];
   let cur = '', inQuotes = false;
@@ -11,11 +12,8 @@ function parseLine(line) {
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(cur.trim()); cur = '';
-    } else {
-      cur += ch;
-    }
+    } else if (ch === ',' && !inQuotes) { fields.push(cur.trim()); cur = ''; }
+    else cur += ch;
   }
   fields.push(cur.trim());
   return fields;
@@ -52,13 +50,45 @@ function guessField(row, candidates) {
   return '';
 }
 
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+const MONTH_NUM = { JAN:'01',FEB:'02',MAR:'03',APR:'04',MAY:'05',JUN:'06',JUL:'07',AUG:'08',SEP:'09',OCT:'10',NOV:'11',DEC:'12' };
+const MGMT_RATE = 0.23;
 const fmt = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Vision-capable models on OpenRouter
+const VISION_PRESETS = [
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+  'google/gemma-4-26b-a4b-it:free',
+];
+
+const PARSE_PROMPT = `Extract ALL reservation entries from this Vacasa owner portal screenshot — both "GUEST STAY" and "OWNER HOLD" entries.
+Return ONLY a JSON array — no markdown, no explanation, just the raw array.
+
+For each entry return an object with exactly these keys:
+{
+  "type": "GUEST_STAY" or "OWNER_HOLD",
+  "day": <integer — the day number shown in the colored date badge>,
+  "month": <3-letter uppercase month abbreviation from the badge, e.g. "MAY">,
+  "year": <4-digit integer — read from a year header like "2026 Reservations"; if not visible use ${new Date().getFullYear()}>,
+  "nights": <integer number of nights>,
+  "guestName": <first name + last initial for GUEST_STAY only, e.g. "Krystal J"; use null for OWNER_HOLD>,
+  "netRent": <dollar amount in NET RENT column for GUEST_STAY, e.g. 289.33; use 0 for OWNER_HOLD>
+}`;
 
 export default function Import() {
   const [transactions, setTransactions] = useLocalStorage('wbh_transactions', sampleTransactions);
+  const [reservations, setReservations] = useLocalStorage('wbh_reservations', sampleReservations);
+  const [mode, setMode] = useState('bank');
 
   // ── CSV state ──────────────────────────────────────────────────────────────
-  const [mode, setMode] = useState('bank');
   const [step, setStep] = useState('upload');
   const [rows, setRows] = useState([]);
   const [headers, setHeaders] = useState([]);
@@ -94,15 +124,34 @@ export default function Import() {
     reader.readAsText(file);
   };
 
-  const buildRow = (row) => ({
-    id: crypto.randomUUID(),
-    date: normalizeDate(row[mapping.date]),
-    description: row[mapping.description] || 'Imported transaction',
-    amount: Math.abs(parseFloat((row[mapping.amount] || '0').replace(/[^0-9.-]/g, '')) || 0),
-    type: row[mapping.type] ? (row[mapping.type].toLowerCase().includes('credit') ? 'Income' : 'Expense') : defaultType,
-    category: row[mapping.category] || defaultCategory,
-    notes: 'Imported from CSV',
-  });
+  const buildRow = (row) => {
+    // Preserve sign before stripping non-numeric characters
+    const rawStr    = (row[mapping.amount] || '0').trim();
+    const isNeg     = rawStr.startsWith('-') || rawStr.startsWith('(');
+    const rawAmount = parseFloat(rawStr.replace(/[^0-9.]/g, '')) || 0;
+    const signed    = isNeg ? -rawAmount : rawAmount;
+    const amount    = Math.abs(signed);
+
+    // Determine type: explicit type column → keywords; otherwise use sign of amount
+    let type = defaultType;
+    if (mapping.type && row[mapping.type]) {
+      const t = row[mapping.type].toLowerCase();
+      if (t.includes('credit') || t.includes('income') || t.includes('deposit')) type = 'Income';
+      else if (t.includes('debit') || t.includes('expense') || t.includes('withdrawal')) type = 'Expense';
+    } else if (signed !== 0) {
+      type = signed > 0 ? 'Income' : 'Expense';
+    }
+
+    return {
+      id:          crypto.randomUUID(),
+      date:        normalizeDate(row[mapping.date]),
+      description: row[mapping.description] || 'Imported transaction',
+      amount,
+      type,
+      category:    row[mapping.category] || defaultCategory,
+      notes:       'Imported from CSV',
+    };
+  };
 
   const existingKeys  = () => new Set(transactions.map(tx => `${tx.date}|${tx.description}|${Number(tx.amount)}|${tx.type}`));
   const existingSfIds = () => new Set(transactions.filter(t => t.sfTxId).map(t => t.sfTxId));
@@ -119,11 +168,16 @@ export default function Import() {
     setTransactions(prev => [...prev, ...fresh]);
     setStep('done');
   };
-  const resetCsv = () => { setStep('upload'); setRows([]); setHeaders([]); setPreview([]); setCsvError(''); setCsvSkipped(0); if (fileRef.current) fileRef.current.value = ''; };
+  const resetCsv = () => {
+    setStep('upload'); setRows([]); setHeaders([]); setPreview([]);
+    setCsvError(''); setCsvSkipped(0);
+    if (fileRef.current) fileRef.current.value = '';
+  };
   const csvSteps = ['upload', 'map', 'preview', 'done'];
 
   // ── SimpleFIN state ────────────────────────────────────────────────────────
   const [sfAccessUrl, setSfAccessUrl] = useLocalStorage('wbh_simplefin_url', '');
+  const [autoSyncDate]                = useLocalStorage('wbh_auto_sync_date', '');
   const [sfStep, setSfStep] = useState(() => sfAccessUrl ? 'sync' : 'connect');
   const [sfToken, setSfToken] = useState('');
   const [sfConnecting, setSfConnecting] = useState(false);
@@ -132,9 +186,7 @@ export default function Import() {
   const [sfAccounts, setSfAccounts] = useState([]);
   const [sfPreview, setSfPreview] = useState([]);
   const [sfStartDate, setSfStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 90);
-    return d.toISOString().slice(0, 10);
+    const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10);
   });
 
   async function sfClaim() {
@@ -160,7 +212,11 @@ export default function Import() {
       const res = await fetch(`${base}/accounts?start-date=${startTs}`, { headers: { Authorization: `Basic ${auth}` } });
       if (!res.ok) throw new Error(`API error (${res.status})`);
       const data = await res.json();
-      const accounts = data.accounts || [];
+      const allAccounts = data.accounts || [];
+      const accounts = allAccounts.filter(a =>
+        (a.org?.name || '').toLowerCase().includes('wells fargo') &&
+        !(a.name    || '').toLowerCase().includes('credit')
+      );
       setSfAccounts(accounts);
       const txs = accounts.flatMap(acct =>
         (acct.transactions || []).map(tx => {
@@ -179,7 +235,7 @@ export default function Import() {
       setSfPreview(txs.map(tx => ({ ...tx, _dupe: isDupe(tx, keys) })));
       setSfStep('preview');
     } catch (e) {
-      setSfError(e.message || 'Sync failed. Your connection may have expired — try disconnecting and reconnecting.');
+      setSfError(e.message || 'Sync failed.');
     } finally { setSfSyncing(false); }
   }
 
@@ -192,6 +248,165 @@ export default function Import() {
   function sfDisconnect() {
     setSfAccessUrl(''); setSfStep('connect');
     setSfAccounts([]); setSfPreview([]); setSfError(''); setSfToken('');
+  }
+
+  // ── Screenshot / Vision state ──────────────────────────────────────────────
+  const [apiKey, setApiKey]       = useLocalStorage('wbh_openrouter_key', '');
+  const [keyDraft, setKeyDraft]   = useState('');
+  const [ssModel, setSsModel]     = useLocalStorage('wbh_vision_model', 'google/gemma-4-31b-it:free');
+  const [ssImageUrl, setSsImageUrl] = useState('');   // object URL for preview
+  const [ssBase64, setSsBase64]   = useState('');     // base64 data URI
+  const [ssMime, setSsMime]       = useState('');
+  const [ssParsing, setSsParsing] = useState(false);
+  const [ssError, setSsError]     = useState('');
+  const [ssDraft, setSsDraft]     = useState([]);     // editable parsed rows
+  const [ssStep, setSsStep]       = useState('upload');
+  const ssFileRef = useRef();
+
+  function handleSsFile(e) {
+    const file = e.target.files?.[0] || e.dataTransfer?.files?.[0];
+    if (!file || !file.type.startsWith('image/')) {
+      setSsError('Please upload an image file (PNG, JPG, etc.)');
+      return;
+    }
+    setSsError('');
+    const objectUrl = URL.createObjectURL(file);
+    setSsImageUrl(objectUrl);
+    setSsMime(file.type);
+    const reader = new FileReader();
+    reader.onload = (ev) => setSsBase64(ev.target.result); // full data URI
+    reader.readAsDataURL(file);
+    setSsStep('parse');
+  }
+
+  async function parseScreenshot() {
+    if (!ssBase64) return;
+    if (!apiKey) { setSsError('OpenRouter API key required — enter it below.'); return; }
+    setSsParsing(true); setSsError('');
+    try {
+      const res = await fetch(OR_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://warrior-beach-house.local',
+          'X-Title': 'Warrior Beach House',
+        },
+        body: JSON.stringify({
+          model: ssModel,
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: ssBase64 } },
+              { type: 'text', text: PARSE_PROMPT },
+            ],
+          }],
+        }),
+      });
+      if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      const msg = data.choices?.[0]?.message;
+      // Reasoning models put the answer in content; fallback to reasoning field if content is empty
+      const raw = msg?.content || msg?.reasoning || '';
+
+      if (!raw.trim()) throw new Error('Model returned an empty response. Try a different model.');
+
+      // Extract JSON array — strip markdown fences, then find the first [...] block
+      const stripped = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '');
+      const arrayMatch = stripped.match(/\[[\s\S]*\]/);
+      if (!arrayMatch) throw new Error(`Model did not return a JSON array. Response preview: ${raw.slice(0, 200)}`);
+      const parsed = JSON.parse(arrayMatch[0]);
+      if (!Array.isArray(parsed)) throw new Error('Expected a JSON array');
+
+      // Convert each entry to a reservation draft
+      const today = new Date().toISOString().slice(0, 10);
+      const drafts = parsed.map(entry => {
+        const isOwnerHold = entry.type === 'OWNER_HOLD';
+        const monthNum    = MONTH_NUM[entry.month?.toUpperCase()] || '01';
+        const checkIn     = `${entry.year}-${monthNum}-${String(entry.day).padStart(2, '0')}`;
+        const checkOut    = addDays(checkIn, Number(entry.nights) || 0);
+        const nights      = Number(entry.nights) || 0;
+        let grossRent, mgmtFee, netRent, grossNightlyRate, netNightlyRate;
+        if (isOwnerHold) {
+          grossRent = 0; mgmtFee = 0; netRent = -122;
+          grossNightlyRate = 0; netNightlyRate = 0;
+        } else {
+          // Vacasa "Net Rent" is already after their 23% fee — back-calculate gross
+          netRent          = Number(entry.netRent) || 0;
+          grossRent        = netRent / (1 - MGMT_RATE);
+          mgmtFee          = grossRent * MGMT_RATE;
+          grossNightlyRate = nights > 0 ? grossRent / nights : 0;
+          netNightlyRate   = nights > 0 ? netRent   / nights : 0;
+        }
+        return {
+          id:            crypto.randomUUID(),
+          guestName:     isOwnerHold ? 'Owner Hold' : (entry.guestName || ''),
+          guestEmail:    '',
+          guestPhone:    '',
+          isOwnerHold,
+          checkIn,
+          checkOut,
+          nights,
+          grossRent,
+          managementFee: mgmtFee,
+          netRent,
+          grossNightlyRate,
+          netNightlyRate,
+          status:        checkIn > today ? 'Upcoming' : checkOut < today ? 'Complete' : 'Active',
+          notes:         '',
+        };
+      });
+      setSsDraft(drafts);
+      setSsStep('review');
+    } catch (e) {
+      setSsError(e.message || 'Failed to parse screenshot. Try a different model or re-upload a clearer image.');
+    } finally { setSsParsing(false); }
+  }
+
+  function updateDraft(id, field, value) {
+    setSsDraft(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updated = { ...r, [field]: value };
+      // Recompute derived fields when grossRent, checkIn, or checkOut changes
+      if (field === 'grossRent' || field === 'checkIn' || field === 'checkOut') {
+        const nights = Math.max(
+          (new Date(updated.checkOut + 'T12:00:00') - new Date(updated.checkIn + 'T12:00:00')) / 86400000, 0
+        );
+        const gross   = Number(updated.grossRent) || 0;
+        const mgmtFee = gross * MGMT_RATE;
+        const net     = gross - mgmtFee;
+        return {
+          ...updated,
+          nights,
+          managementFee:    mgmtFee,
+          netRent:          net,
+          grossNightlyRate: nights > 0 ? gross / nights : 0,
+          netNightlyRate:   nights > 0 ? net   / nights : 0,
+        };
+      }
+      return updated;
+    }));
+  }
+
+  function removeDraft(id) { setSsDraft(prev => prev.filter(r => r.id !== id)); }
+
+  function ssImport() {
+    // Deduplicate against existing reservations by checkIn + guestName
+    const existingKeys = new Set(
+      reservations.map(r => `${r.checkIn}|${r.guestName?.toLowerCase()}`)
+    );
+    const fresh = ssDraft.filter(r =>
+      !existingKeys.has(`${r.checkIn}|${r.guestName?.toLowerCase()}`)
+    );
+    setReservations(prev => [...prev, ...fresh]);
+    setSsStep('done');
+  }
+
+  function resetSs() {
+    setSsStep('upload'); setSsImageUrl(''); setSsBase64('');
+    setSsDraft([]); setSsError('');
+    if (ssFileRef.current) ssFileRef.current.value = '';
   }
 
   // ── Cleanup state ──────────────────────────────────────────────────────────
@@ -227,19 +442,26 @@ export default function Import() {
     setRemoveCount(csvImported.length);
   };
 
+  // ── Shared input style ─────────────────────────────────────────────────────
+  const inp = 'bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500';
+
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-8 max-w-4xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Import Transactions</h1>
-        <p className="text-slate-400 text-sm mt-1">Sync from your bank or upload a CSV file</p>
+        <h1 className="text-2xl font-bold text-white">Import</h1>
+        <p className="text-slate-400 text-sm mt-1">Sync bank transactions or import reservations from a screenshot</p>
       </div>
 
+      {/* Mode tabs */}
       <div className="flex gap-1 mb-8 p-1 bg-navy-800 border border-navy-700 rounded-lg w-fit">
         <button onClick={() => setMode('bank')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${mode === 'bank' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>
           <Landmark size={13} /> Bank Sync
         </button>
         <button onClick={() => setMode('csv')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${mode === 'csv' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>
           <Upload size={13} /> CSV Upload
+        </button>
+        <button onClick={() => setMode('screenshot')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${mode === 'screenshot' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+          <Camera size={13} /> Screenshot
         </button>
       </div>
 
@@ -249,17 +471,18 @@ export default function Import() {
           {sfStep === 'connect' && (
             <div className="space-y-5">
               <div className="p-5 bg-navy-800 border border-navy-700 rounded-xl space-y-3">
-                <h2 className="text-white font-semibold flex items-center gap-2"><Landmark size={16} className="text-emerald-400" /> Connect Bank via SimpleFIN</h2>
+                <h2 className="text-white font-semibold flex items-center gap-2"><Landmark size={16} className="text-emerald-400" /> Connect Wells Fargo via SimpleFIN</h2>
                 <ol className="text-slate-400 text-sm space-y-1.5 list-decimal list-inside">
                   <li>Go to <span className="text-emerald-400 font-mono text-xs">beta-bridge.simplefin.org</span> and create a free account</li>
-                  <li>Click <strong className="text-white">Connect Account</strong> and link your bank</li>
+                  <li>Click <strong className="text-white">Connect Account</strong> and link your Wells Fargo accounts</li>
                   <li>Click <strong className="text-white">+ Add Application Token</strong> and copy the token</li>
                   <li>Paste it below and click Connect</li>
                 </ol>
+                <p className="text-xs text-slate-500">Only Wells Fargo checking and credit card transactions will be imported.</p>
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">SimpleFIN Setup Token</label>
-                <textarea value={sfToken} onChange={e => setSfToken(e.target.value)} placeholder="Paste your setup token here..." className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white font-mono h-24 resize-none focus:outline-none focus:border-emerald-500" />
+                <textarea value={sfToken} onChange={e => setSfToken(e.target.value)} placeholder="Paste your setup token here..." className={`w-full ${inp} font-mono h-24 resize-none`} />
               </div>
               {sfError && <div className="flex items-start gap-2 text-red-400 text-sm"><AlertCircle size={14} className="mt-0.5 shrink-0" />{sfError}</div>}
               <button onClick={sfClaim} disabled={!sfToken.trim() || sfConnecting} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium">
@@ -271,12 +494,15 @@ export default function Import() {
           {sfStep === 'sync' && (
             <div className="space-y-5">
               <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium"><Check size={15} /> Bank connected via SimpleFIN</div>
-                <button onClick={sfDisconnect} className="text-xs text-slate-500 hover:text-red-400 transition-colors">Disconnect</button>
+                <div>
+                  <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium"><Check size={15} /> Wells Fargo checking connected · auto-syncs nightly at midnight</div>
+                  {autoSyncDate && <div className="text-xs text-slate-500 mt-0.5">Last auto-sync: {autoSyncDate}</div>}
+                </div>
+                <button onClick={sfDisconnect} className="text-xs text-slate-500 hover:text-red-400 transition-colors ml-4">Disconnect</button>
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Fetch transactions since</label>
-                <input type="date" value={sfStartDate} onChange={e => setSfStartDate(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                <input type="date" value={sfStartDate} onChange={e => setSfStartDate(e.target.value)} className={`w-full ${inp}`} />
               </div>
               {sfError && <div className="flex items-start gap-2 text-red-400 text-sm"><AlertCircle size={14} className="mt-0.5 shrink-0" />{sfError}</div>}
               <button onClick={sfSync} disabled={sfSyncing} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium flex items-center gap-2">
@@ -293,7 +519,7 @@ export default function Import() {
               <div className="space-y-4">
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm flex items-center gap-2">
                   <AlertCircle size={14} />
-                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfAccounts.length} account{sfAccounts.length !== 1 ? 's' : ''}.
+                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfAccounts.length} Wells Fargo account{sfAccounts.length !== 1 ? 's' : ''}.
                   {sfDupes > 0 && <span className="text-slate-400">{sfDupes} already imported will be skipped.</span>}
                 </div>
                 <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
@@ -370,7 +596,7 @@ export default function Import() {
               {[['date','Date column',true],['description','Description column',true],['amount','Amount column',true],['type','Type column',false],['category','Category column',false]].map(([field, label, req]) => (
                 <div key={field}>
                   <label className="text-xs text-slate-400 block mb-1">{label}{req && ' *'}</label>
-                  <select value={mapping[field]} onChange={e => setMapping({ ...mapping, [field]: e.target.value })} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
+                  <select value={mapping[field]} onChange={e => setMapping({ ...mapping, [field]: e.target.value })} className={`w-full ${inp}`}>
                     <option value="">— Not mapped —</option>{headers.map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
@@ -378,15 +604,12 @@ export default function Import() {
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-navy-700">
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Default Type</label>
-                  <select value={defaultType} onChange={e => setDefaultType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
-                    <option>Income</option><option>Expense</option>
-                  </select>
+                  <select value={defaultType} onChange={e => setDefaultType(e.target.value)} className={`w-full ${inp}`}><option>Income</option><option>Expense</option></select>
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Default Category</label>
-                  <select value={defaultCategory} onChange={e => setDefaultCategory(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
-                    <option value="">— No category —</option>
-                    {TRANSACTION_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  <select value={defaultCategory} onChange={e => setDefaultCategory(e.target.value)} className={`w-full ${inp}`}>
+                    <option value="">— No category —</option>{TRANSACTION_CATEGORIES.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
@@ -399,7 +622,6 @@ export default function Import() {
 
           {step === 'preview' && (() => {
             const keys = existingKeys();
-            const previewDupes = preview.filter(tx => isDupe(tx, keys)).length;
             const totalDupes = rows.map(buildRow).filter(tx => isDupe(tx, keys)).length;
             const totalFresh = rows.length - totalDupes;
             return (
@@ -442,15 +664,220 @@ export default function Import() {
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4"><Check size={32} className="text-emerald-400" /></div>
               <h2 className="text-xl font-semibold text-white mb-2">Import Complete!</h2>
-              <p className="text-slate-400 text-sm mb-6">{rows.length - csvSkipped} transactions added{csvSkipped > 0 ? `, ${csvSkipped} duplicates skipped` : ''}.</p>
+              <p className="text-slate-400 text-sm mb-6">{rows.length - csvSkipped} transactions added.</p>
               <button onClick={resetCsv} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium">Import Another File</button>
             </div>
           )}
         </div>
       )}
 
-      {/* ═══ DATA REPAIR ═════════════════════════════════════════════════════ */}
-      {transactions.length > 0 && (
+      {/* ═══ SCREENSHOT IMPORT ═══════════════════════════════════════════════ */}
+      {mode === 'screenshot' && (
+        <div>
+          {ssStep === 'upload' && (
+            <div className="space-y-5">
+              <div className="p-4 bg-navy-800 border border-navy-700 rounded-xl space-y-1">
+                <h2 className="text-white font-semibold flex items-center gap-2"><Camera size={16} className="text-emerald-400" /> Import Reservations from Screenshot</h2>
+                <p className="text-slate-400 text-sm">Take a screenshot of your Vacasa reservations page and upload it here. A vision AI will extract the reservation data automatically.</p>
+                <p className="text-xs text-slate-500">Vacasa's "Net Rent" is already after their 23% fee. Gross Rent will be back-calculated (Net ÷ 0.77) so the numbers reconcile correctly.</p>
+              </div>
+
+              {/* API Key */}
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 flex items-center justify-between">
+                  <span>OpenRouter API Key <span className="text-slate-600">(required — free at openrouter.ai/keys)</span></span>
+                  {apiKey && <span className="text-emerald-400 text-xs">✓ Saved</span>}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={keyDraft || (apiKey ? '••••••••••••••••' : '')}
+                    onChange={e => setKeyDraft(e.target.value)}
+                    onFocus={e => { if (!keyDraft) setKeyDraft(apiKey); }}
+                    placeholder="sk-or-..."
+                    className={`flex-1 ${inp} font-mono`}
+                  />
+                  <button
+                    onClick={() => { if (keyDraft) { setApiKey(keyDraft); setKeyDraft(''); } }}
+                    disabled={!keyDraft}
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-sm font-medium"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1 flex items-center justify-between">
+                  <span>AI Vision Model</span>
+                  <a href="https://openrouter.ai/models?modalities=image" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300">Browse models ↗</a>
+                </label>
+                <input
+                  value={ssModel}
+                  onChange={e => setSsModel(e.target.value)}
+                  placeholder="e.g. meta-llama/llama-3.2-11b-vision-instruct:free"
+                  className={`w-full ${inp} font-mono text-xs`}
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {VISION_PRESETS.map(id => (
+                    <button key={id} onClick={() => setSsModel(id)}
+                      className={`text-xs px-2 py-1 rounded border transition-colors font-mono ${ssModel === id ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : 'border-navy-600 text-slate-500 hover:text-slate-300 hover:border-navy-500'}`}>
+                      {id.split('/')[1]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label
+                className="flex flex-col items-center justify-center w-full h-56 bg-navy-800 border-2 border-dashed border-navy-600 rounded-xl cursor-pointer hover:border-emerald-500 transition-colors"
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); handleSsFile(e); }}
+                onClick={() => ssFileRef.current?.click()}
+              >
+                <Camera size={36} className="text-slate-500 mb-3" />
+                <span className="text-slate-400 text-sm">Drop a screenshot here, or click to browse</span>
+                <span className="text-slate-600 text-xs mt-1">PNG, JPG, or WEBP</span>
+                <input ref={ssFileRef} type="file" accept="image/*" className="hidden" onChange={handleSsFile} />
+              </label>
+              {ssError && <div className="flex items-start gap-2 text-red-400 text-sm"><AlertCircle size={14} className="mt-0.5 shrink-0" />{ssError}</div>}
+            </div>
+          )}
+
+          {ssStep === 'parse' && (
+            <div className="space-y-5">
+              <div className="flex items-start gap-4 p-4 bg-navy-800 border border-navy-700 rounded-xl">
+                <img src={ssImageUrl} alt="Screenshot preview" className="w-48 rounded-lg object-cover border border-navy-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium mb-1">Screenshot uploaded</p>
+                  <p className="text-slate-400 text-xs mb-4">The AI will scan for GUEST STAY rows and extract dates, guest names, and net rent amounts. Owner holds will be skipped.</p>
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-400 block mb-1 flex items-center justify-between">
+                      <span>Vision Model</span>
+                      <a href="https://openrouter.ai/models?modalities=image" target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 text-xs">Browse ↗</a>
+                    </label>
+                    <input
+                      value={ssModel}
+                      onChange={e => setSsModel(e.target.value)}
+                      className={`w-full ${inp} font-mono text-xs`}
+                    />
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {VISION_PRESETS.map(id => (
+                        <button key={id} onClick={() => setSsModel(id)}
+                          className={`text-xs px-1.5 py-0.5 rounded border font-mono transition-colors ${ssModel === id ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : 'border-navy-600 text-slate-500 hover:text-slate-300'}`}>
+                          {id.split('/')[1]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {!apiKey && (
+                    <div className="mb-3">
+                      <label className="text-xs text-slate-400 block mb-1">OpenRouter API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="sk-or-..." className={`flex-1 ${inp} font-mono`} />
+                        <button onClick={() => { if (keyDraft) { setApiKey(keyDraft); setKeyDraft(''); } }} disabled={!keyDraft} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium">Save</button>
+                      </div>
+                    </div>
+                  )}
+                  {ssError && <div className="flex items-start gap-2 text-red-400 text-sm mb-3"><AlertCircle size={14} className="mt-0.5 shrink-0" />{ssError}</div>}
+                  <div className="flex gap-2">
+                    <button onClick={parseScreenshot} disabled={ssParsing || !apiKey} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium flex items-center gap-2">
+                      <Camera size={14} className={ssParsing ? 'animate-pulse' : ''} />
+                      {ssParsing ? 'Parsing…' : 'Parse Reservations'}
+                    </button>
+                    <button onClick={resetSs} className="px-4 py-2 text-slate-400 hover:text-white text-sm">← Start over</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {ssStep === 'review' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white font-medium">{ssDraft.length} reservation{ssDraft.length !== 1 ? 's' : ''} extracted ({ssDraft.filter(r => !r.isOwnerHold).length} guest, {ssDraft.filter(r => r.isOwnerHold).length} owner holds)</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Guest stays: Vacasa net rent back-calculated to gross (÷ 0.77). Owner holds: $122 cleaning fee applied.</p>
+                </div>
+                <button onClick={() => setSsStep('parse')} className="text-slate-400 hover:text-white text-sm">← Re-parse</button>
+              </div>
+
+              <div className="space-y-2">
+                {ssDraft.map(r => (
+                  <div key={r.id} className={`border rounded-xl p-4 ${r.isOwnerHold ? 'bg-yellow-500/5 border-yellow-500/30' : 'bg-navy-800 border-navy-700'}`}>
+                    {r.isOwnerHold && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xs font-medium text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 rounded-full">Owner Hold</span>
+                        <span className="text-xs text-slate-500">Cleaning fee: <span className="text-red-400">-$122.00</span></span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      {!r.isOwnerHold && (
+                        <>
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Guest Name</label>
+                            <input value={r.guestName} onChange={e => updateDraft(r.id, 'guestName', e.target.value)} className={`w-full ${inp}`} />
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Check-In</label>
+                        <input type="date" value={r.checkIn} onChange={e => updateDraft(r.id, 'checkIn', e.target.value)} className={`w-full ${inp}`} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Check-Out</label>
+                        <input type="date" value={r.checkOut} onChange={e => updateDraft(r.id, 'checkOut', e.target.value)} className={`w-full ${inp}`} />
+                      </div>
+                      {!r.isOwnerHold && (
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Gross Rent ($)</label>
+                          <input type="number" min="0" step="0.01" value={r.grossRent} onChange={e => updateDraft(r.id, 'grossRent', Number(e.target.value))} className={`w-full ${inp}`} />
+                        </div>
+                      )}
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Status</label>
+                        <select value={r.status} onChange={e => updateDraft(r.id, 'status', e.target.value)} className={`w-full ${inp}`}>
+                          <option>Upcoming</option><option>Active</option><option>Complete</option><option>Cancelled</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex gap-4 text-slate-400">
+                        <span><span className="text-slate-500">Nights:</span> <span className="text-white">{r.nights}</span></span>
+                        {!r.isOwnerHold && <>
+                          <span><span className="text-slate-500">Mgmt fee:</span> <span className="text-red-400">-{fmt(r.managementFee)}</span></span>
+                          <span><span className="text-slate-500">Net rent:</span> <span className="text-emerald-400">{fmt(r.netRent)}</span></span>
+                        </>}
+                        <span><span className="text-slate-500">Net/night:</span> <span className="text-slate-300">{fmt(r.netNightlyRate)}</span></span>
+                      </div>
+                      <button onClick={() => removeDraft(r.id)} className="text-slate-500 hover:text-red-400 flex items-center gap-1">
+                        <Trash2 size={13} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {ssDraft.length > 0 && (
+                <button onClick={ssImport} className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                  <Check size={15} /> Import {ssDraft.length} Reservation{ssDraft.length !== 1 ? 's' : ''}
+                </button>
+              )}
+            </div>
+          )}
+
+          {ssStep === 'done' && (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4"><Check size={32} className="text-emerald-400" /></div>
+              <h2 className="text-xl font-semibold text-white mb-2">Reservations Imported!</h2>
+              <p className="text-slate-400 text-sm mb-6">Go to the Reservations page to review them.</p>
+              <button onClick={resetSs} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium">Import Another Screenshot</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ DATA REPAIR (transactions only) ════════════════════════════════ */}
+      {mode !== 'screenshot' && transactions.length > 0 && (
         <div className="mt-12 pt-8 border-t border-navy-700">
           <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Data Repair</h2>
           {[

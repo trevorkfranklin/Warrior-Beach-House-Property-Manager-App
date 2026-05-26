@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, Upload, Home, DollarSign, TrendingUp,
-  CalendarDays, LogOut, ShieldCheck, Bell, MessageSquare, Waves,
+  CalendarDays, LogOut, ShieldCheck, Bell, MessageSquare, Waves, Users, TableProperties,
 } from 'lucide-react';
 import { useAuth } from '../context/Auth';
 import { useNotificationCount } from '../pages/Notifications';
@@ -12,9 +12,11 @@ const navItems = [
   { to: '/import',            label: 'Import',           icon: Upload },
   { to: '/property',          label: 'Property',         icon: Home },
   { to: '/reservations',      label: 'Reservations',     icon: CalendarDays },
+  { to: '/owners',            label: 'Owners',           icon: Users },
   { to: '/property-taxes',    label: 'Property Taxes',   icon: DollarSign },
   { to: '/hoa-dues',          label: 'HOA Dues',         icon: Home },
   { to: '/projected-cashflow',label: 'Projected Cashflow',icon: TrendingUp },
+  { to: '/cashflow-details',  label: 'Cashflow Details',  icon: TableProperties },
   { to: '/chat',              label: 'AI Assistant',     icon: MessageSquare },
   { to: '/notifications',     label: 'Notifications',    icon: Bell },
   { to: '/users',             label: 'Users',            icon: ShieldCheck, adminOnly: true },

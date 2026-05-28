@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Plus, Pencil, Trash2, X, Check, CalendarDays, Download, Home } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sampleReservations, sampleOwners } from '../data/sampleData';
@@ -186,6 +186,195 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
   );
 }
 
+const CHART_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const METRIC_OPTIONS = [
+  { value: 'nights',    label: 'Nights Booked' },
+  { value: 'holdNights',label: 'Owner Hold Nights' },
+  { value: 'occupancy', label: 'Occupancy Rate' },
+  { value: 'avgRate',   label: 'Avg Nightly Rate' },
+];
+
+const METRIC_COLORS = {
+  nights:    '#60a5fa',
+  holdNights:'#facc15',
+  occupancy: '#a78bfa',
+  avgRate:   '#34d399',
+};
+
+function niceMax(val, metric) {
+  if (val === 0) return metric === 'occupancy' ? 100 : metric === 'avgRate' ? 500 : 10;
+  const exp    = Math.floor(Math.log10(val));
+  const factor = Math.pow(10, exp);
+  const norm   = val / factor;
+  const nice   = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * factor;
+}
+
+function ReservationsChart({ enriched }) {
+  const currentYear = new Date().getFullYear();
+  const allYears    = useMemo(() => {
+    const ys = new Set(enriched.map(r => r.checkIn?.slice(0, 4)).filter(Boolean));
+    ys.add(String(currentYear));
+    return [...ys].sort((a, b) => b - a);
+  }, [enriched, currentYear]);
+
+  const [chartYear, setChartYear] = useState(String(currentYear));
+  const [metric,    setMetric]    = useState('nights');
+  const [hovered,   setHovered]   = useState(null);
+  const containerRef = useRef(null);
+
+  const monthlyData = useMemo(() => CHART_MONTHS.map((label, mo) => {
+    const monthStr  = `${chartYear}-${String(mo + 1).padStart(2, '0')}`;
+    const monthRes  = enriched.filter(r => r.derivedStatus !== 'Cancelled' && r.checkIn?.startsWith(monthStr));
+    const guests    = monthRes.filter(r => !r.isOwnerHold);
+    const holds     = monthRes.filter(r => r.isOwnerHold);
+    const guestNights = guests.reduce((s, r) => s + r.nights, 0);
+    const ownerNights = holds.reduce((s, r) => s + r.nights, 0);
+    const totalGross  = guests.reduce((s, r) => s + (Number(r.grossRent) || 0), 0);
+    const daysInMonth = new Date(Number(chartYear), mo + 1, 0).getDate();
+    return {
+      label, monthStr,
+      guestNights, ownerNights,
+      guestStays: guests.length, ownerHoldCount: holds.length,
+      occupancy: daysInMonth > 0 ? (guestNights / daysInMonth) * 100 : 0,
+      avgRate:   guestNights > 0 ? totalGross / guestNights : 0,
+      daysInMonth,
+    };
+  }), [enriched, chartYear]);
+
+  const getValue = (d) => ({
+    nights:    d.guestNights,
+    holdNights:d.ownerNights,
+    occupancy: d.occupancy,
+    avgRate:   d.avgRate,
+  }[metric]);
+
+  const fmtTick = (v) => {
+    if (metric === 'occupancy') return v.toFixed(0) + '%';
+    if (metric === 'avgRate')   return '$' + v.toFixed(0);
+    return String(Math.round(v));
+  };
+
+  const values = monthlyData.map(getValue);
+  const maxVal = niceMax(Math.max(...values, 0), metric);
+  const color  = METRIC_COLORS[metric];
+
+  // SVG logical dimensions
+  const W = 780, H = 200, padL = 52, padR = 12, padT = 12, padB = 36;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const slotW  = chartW / 12;
+  const barW   = slotW * 0.55;
+  const NUM_TICKS = 4;
+  const ticks  = Array.from({ length: NUM_TICKS + 1 }, (_, i) => (maxVal * i) / NUM_TICKS);
+
+  const onEnter = (idx, e) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHovered({ idx, x: e.clientX - rect.left, y: e.clientY - rect.top, cw: rect.width });
+  };
+
+  const metricLabel = METRIC_OPTIONS.find(m => m.value === metric)?.label ?? '';
+
+  return (
+    <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm font-semibold text-white">{metricLabel} · {chartYear}</div>
+        <div className="flex items-center gap-2">
+          <select value={metric} onChange={e => setMetric(e.target.value)}
+            className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+            {METRIC_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          {allYears.length > 1 && (
+            <select value={chartYear} onChange={e => setChartYear(e.target.value)}
+              className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+              {allYears.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+
+      <div ref={containerRef} className="relative select-none" onMouseLeave={() => setHovered(null)}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="overflow-visible">
+          {/* Grid lines + Y labels */}
+          {ticks.map((tick, ti) => {
+            const y = padT + chartH - (tick / maxVal) * chartH;
+            return (
+              <g key={ti}>
+                <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#1e293b" strokeWidth="1" />
+                <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="middle" fill="#475569" fontSize="10">
+                  {fmtTick(tick)}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Axes */}
+          <line x1={padL} x2={padL}      y1={padT} y2={padT + chartH} stroke="#334155" strokeWidth="1" />
+          <line x1={padL} x2={W - padR}  y1={padT + chartH} y2={padT + chartH} stroke="#334155" strokeWidth="1" />
+
+          {/* Bars */}
+          {monthlyData.map((d, i) => {
+            const v    = getValue(d);
+            const h    = maxVal > 0 ? (v / maxVal) * chartH : 0;
+            const x    = padL + i * slotW + (slotW - barW) / 2;
+            const y    = padT + chartH - h;
+            const isHov = hovered?.idx === i;
+            return (
+              <g key={d.monthStr}
+                onMouseEnter={e => onEnter(i, e)}
+                onMouseMove={e  => onEnter(i, e)}
+                style={{ cursor: 'default' }}>
+                <rect x={x} y={h > 0 ? y : padT + chartH - 1}
+                  width={barW} height={Math.max(h, 0)} rx="3"
+                  fill={isHov ? color : color + 'aa'} />
+                <text x={padL + i * slotW + slotW / 2} y={padT + chartH + 16}
+                  textAnchor="middle" fill={isHov ? '#cbd5e1' : '#475569'} fontSize="11">
+                  {d.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Tooltip */}
+        {hovered != null && (() => {
+          const d = monthlyData[hovered.idx];
+          const flipLeft = hovered.x > (hovered.cw || 600) * 0.6;
+          return (
+            <div className="absolute z-10 pointer-events-none bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-xs shadow-lg"
+              style={{
+                left: hovered.x,
+                top: Math.max(hovered.y - 80, 4),
+                transform: flipLeft ? 'translateX(calc(-100% - 8px))' : 'translateX(12px)',
+                minWidth: 148,
+              }}>
+              <div className="font-semibold text-white mb-1.5">{d.label} {chartYear}</div>
+              {metric === 'nights' && <>
+                <div className="text-slate-400">Guest nights: <span className="text-blue-400 font-semibold">{d.guestNights}</span></div>
+                <div className="text-slate-400">Stays: <span className="text-slate-300">{d.guestStays}</span></div>
+              </>}
+              {metric === 'holdNights' && <>
+                <div className="text-slate-400">Hold nights: <span className="text-yellow-400 font-semibold">{d.ownerNights}</span></div>
+                <div className="text-slate-400">Holds: <span className="text-slate-300">{d.ownerHoldCount}</span></div>
+              </>}
+              {metric === 'occupancy' && <>
+                <div className="text-slate-400">Occupancy: <span className="text-violet-400 font-semibold">{d.occupancy.toFixed(1)}%</span></div>
+                <div className="text-slate-400">Nights: <span className="text-slate-300">{d.guestNights} / {d.daysInMonth} days</span></div>
+              </>}
+              {metric === 'avgRate' && <>
+                <div className="text-slate-400">Avg gross/night: <span className="text-emerald-400 font-semibold">${d.avgRate.toFixed(2)}</span></div>
+                <div className="text-slate-400">Guest nights: <span className="text-slate-300">{d.guestNights}</span></div>
+              </>}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
 function reservationStatus(r, today) {
   if (r.status === 'Cancelled') return 'Cancelled';
   if (r.status === 'Complete' || r.checkOut < today) return 'Complete';
@@ -358,6 +547,9 @@ export default function Reservations() {
           <div className="text-xl font-bold text-red-400">-{fmtFull(totals.cleaningCost)}</div>
         </div>
       </div>
+
+      {/* Time-phased chart */}
+      <ReservationsChart enriched={enriched} />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">

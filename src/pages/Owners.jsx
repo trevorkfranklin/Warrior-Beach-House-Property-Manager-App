@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Plus, Pencil, Trash2, X, Check, User, Home, DollarSign, TrendingUp } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, User, Home, DollarSign, TrendingUp, ChevronDown, ChevronUp, Wallet } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSupportCalc } from '../hooks/useSupportCalc';
 import { sampleOwners, sampleTransactions, sampleReservations } from '../data/sampleData';
 import { useAuth } from '../context/Auth';
 
 const OWNER_CLEANING_FEE = 122;
+const RESERVE_TARGET = 500;
 const EMPTY = { id: '', name: '', email: '', phone: '', ownershipPercent: '', notes: '' };
 
 function Modal({ title, form, setForm, onSave, onClose }) {
@@ -50,24 +52,85 @@ function Modal({ title, form, setForm, onSave, onClose }) {
 }
 
 export default function Owners() {
-  const [owners, setOwners]         = useLocalStorage('wbh_owners', sampleOwners);
-  const [transactions]              = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [reservations]              = useLocalStorage('wbh_reservations', sampleReservations);
-  const { canEdit }                 = useAuth();
-  const [modal, setModal]           = useState(null);
-  const [form, setForm]             = useState(EMPTY);
+  const [owners, setOwners]             = useLocalStorage('wbh_owners', sampleOwners);
+  const [transactions]                  = useLocalStorage('wbh_transactions', sampleTransactions);
+  const [reservations]                  = useLocalStorage('wbh_reservations', sampleReservations);
+  const [ownerReserveStarts, setOwnerReserveStarts] = useLocalStorage('wbh_owner_reserve_starts', {});
+  const { canEdit }                     = useAuth();
+  const [modal, setModal]               = useState(null);
+  const [form, setForm]                 = useState(EMPTY);
+  const [expanded, setExpanded]         = useState({});
+  const [editingReserve, setEditingReserve] = useState({});
+  const [reserveInput, setReserveInput] = useState({});
 
-  const fmt = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const { chartSlots, monthData } = useSupportCalc();
+
+  const fmt     = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtSign = (n) => (n >= 0 ? '+' : '') + fmt(n);
+
+  const currentMonthSlotIdx = chartSlots.findIndex(s => s.isCurrent);
+
+  const toggleExpanded  = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const openEditReserve = (owner) => {
+    setReserveInput(prev => ({ ...prev, [owner.id]: ownerReserveStarts[owner.id] ?? '' }));
+    setEditingReserve(prev => ({ ...prev, [owner.id]: true }));
+  };
+  const cancelEditReserve = (id) => setEditingReserve(prev => ({ ...prev, [id]: false }));
+  const saveReserve = (id) => {
+    const val = parseFloat(reserveInput[id]);
+    if (!isNaN(val)) setOwnerReserveStarts(prev => ({ ...prev, [id]: val }));
+    setEditingReserve(prev => ({ ...prev, [id]: false }));
+  };
 
   const ownerStats = useMemo(() => owners.map(owner => {
-    const holds         = reservations.filter(r => r.isOwnerHold && r.ownerId === owner.id);
-    const holdNights    = holds.reduce((s, r) => s + (r.nights || 0), 0);
-    const cleaningCost  = holds.length * OWNER_CLEANING_FEE;
-    const supportTxs    = transactions.filter(t => !t.excluded && t.category === 'Cash Flow Support' && t.ownerId === owner.id);
-    const totalSupport  = supportTxs.reduce((s, t) => s + Number(t.amount), 0);
-    const net           = totalSupport - cleaningCost;
-    return { ...owner, holdCount: holds.length, holdNights, cleaningCost, totalSupport, net };
-  }), [owners, reservations, transactions]);
+    const pct          = (owner.ownershipPercent || 0) / 100;
+    const holds        = reservations.filter(r => r.isOwnerHold && r.ownerId === owner.id);
+    const holdNights   = holds.reduce((s, r) => s + (r.nights || 0), 0);
+    const cleaningCost = holds.length * OWNER_CLEANING_FEE;
+    const supportTxs   = transactions.filter(t => !t.excluded && t.category === 'Cash Flow Support' && t.ownerId === owner.id);
+    const totalSupport = supportTxs.reduce((s, t) => s + Number(t.amount), 0);
+    const net          = totalSupport - cleaningCost;
+
+    // Reserve balance projection starting from May 2026 (current month)
+    const mayBalance  = ownerReserveStarts[owner.id];
+    const hasStart    = mayBalance != null;
+
+    let reserveProjection = [];
+    if (hasStart && currentMonthSlotIdx >= 0) {
+      let bal = Number(mayBalance);
+      for (let i = currentMonthSlotIdx; i < chartSlots.length; i++) {
+        if (i === currentMonthSlotIdx) {
+          // Entered balance IS the current actual state — show as-is, no net adjustment
+          reserveProjection.push({ ...chartSlots[i], netShare: 0, startBalance: bal, endBalance: bal });
+          continue;
+        }
+        // Cleaning fees from prior month's owner holds (same payment timing as rental income)
+        const [slotYr, slotMo] = chartSlots[i].month.split('-').map(Number);
+        const priorMonth = `${slotMo === 1 ? slotYr - 1 : slotYr}-${String(slotMo === 1 ? 12 : slotMo - 1).padStart(2, '0')}`;
+        const totalCleaning = owners.reduce((sum, own) =>
+          sum + reservations.filter(r =>
+            r.isOwnerHold && r.ownerId === own.id &&
+            r.status !== 'Cancelled' && r.checkIn?.slice(0, 7) === priorMonth
+          ).length * OWNER_CLEANING_FEE
+        , 0);
+        const ownCleaning = reservations.filter(r =>
+          r.isOwnerHold && r.ownerId === owner.id &&
+          r.status !== 'Cancelled' && r.checkIn?.slice(0, 7) === priorMonth
+        ).length * OWNER_CLEANING_FEE;
+        const adjustedNet = (monthData[i]?.net ?? 0) + totalCleaning;
+        const netShare = adjustedNet * pct - ownCleaning;
+        const startBal = bal;
+        bal += netShare;
+        reserveProjection.push({ ...chartSlots[i], netShare, startBalance: startBal, endBalance: bal });
+      }
+    }
+
+    const currentReserve = hasStart ? Number(mayBalance) : null;
+    const surplus        = currentReserve != null ? currentReserve - RESERVE_TARGET : null;
+
+    return { ...owner, holdCount: holds.length, holdNights, cleaningCost, totalSupport, net, currentReserve, surplus, hasStart, reserveProjection };
+  }), [owners, reservations, transactions, ownerReserveStarts, chartSlots, monthData, currentMonthSlotIdx]);
 
   const openAdd  = () => { setForm({ ...EMPTY, id: crypto.randomUUID() }); setModal('add'); };
   const openEdit = (o) => { setForm({ ...o }); setModal('edit'); };
@@ -94,7 +157,7 @@ export default function Owners() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Owners</h1>
-          <p className="text-slate-400 text-sm mt-1">Owner holds and cash flow support by individual</p>
+          <p className="text-slate-400 text-sm mt-1">Owner holds, cash flow support, and reserve balances</p>
         </div>
         {canEdit && (
           <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
@@ -112,6 +175,7 @@ export default function Owners() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {ownerStats.map(o => (
             <div key={o.id} className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+
               {/* Header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -128,7 +192,7 @@ export default function Owners() {
                 )}
               </div>
 
-              {/* Stats grid */}
+              {/* Holds & CFS stats */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-navy-900 rounded-lg p-3">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1"><Home size={11} /> Owner Holds</div>
@@ -156,8 +220,131 @@ export default function Owners() {
 
               {o.notes && <div className="text-xs text-slate-500 italic mb-4">{o.notes}</div>}
 
+              {/* Reserve Balance */}
+              <div className="border-t border-navy-700 pt-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Wallet size={13} className="text-slate-400" />
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Reserve Balance</span>
+                  </div>
+                  {canEdit && !editingReserve[o.id] && (
+                    <button onClick={() => openEditReserve(o)} className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors">
+                      <Pencil size={11} /> {o.hasStart ? 'Edit' : 'Set'} May balance
+                    </button>
+                  )}
+                </div>
+
+                {/* May balance input */}
+                {editingReserve[o.id] && canEdit && (
+                  <div className="flex items-center gap-2 mb-3 bg-navy-900 rounded-lg px-3 py-2.5 border border-navy-600">
+                    <span className="text-xs text-slate-400 flex-shrink-0">May 2026 actual balance:</span>
+                    <span className="text-slate-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reserveInput[o.id] ?? ''}
+                      onChange={e => setReserveInput(prev => ({ ...prev, [o.id]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') saveReserve(o.id); if (e.key === 'Escape') cancelEditReserve(o.id); }}
+                      className="flex-1 min-w-0 bg-transparent text-sm text-white focus:outline-none"
+                      placeholder="0.00"
+                      autoFocus
+                    />
+                    <button onClick={() => saveReserve(o.id)} className="text-emerald-400 hover:text-emerald-300 flex-shrink-0"><Check size={14} /></button>
+                    <button onClick={() => cancelEditReserve(o.id)} className="text-slate-400 hover:text-white flex-shrink-0"><X size={14} /></button>
+                  </div>
+                )}
+
+                {!o.hasStart ? (
+                  <div className="bg-navy-900 border border-dashed border-navy-600 rounded-lg p-4 text-center">
+                    <p className="text-xs text-slate-500">No May 2026 balance set</p>
+                    {canEdit && (
+                      <button onClick={() => openEditReserve(o)} className="mt-1.5 text-xs text-emerald-400 hover:text-emerald-300">
+                        Enter actual balance →
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Balance tiles */}
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <div className="bg-navy-900 rounded-lg p-2.5">
+                        <div className="text-xs text-slate-500 mb-1">May Balance</div>
+                        <div className={`font-semibold text-sm ${o.currentReserve >= RESERVE_TARGET ? 'text-emerald-400' : o.currentReserve >= RESERVE_TARGET / 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {fmt(o.currentReserve)}
+                        </div>
+                        <div className="text-xs text-slate-600 mt-0.5">actual</div>
+                      </div>
+                      <div className="bg-navy-900 rounded-lg p-2.5">
+                        <div className="text-xs text-slate-500 mb-1">Target</div>
+                        <div className="font-semibold text-sm text-slate-300">{fmt(RESERVE_TARGET)}</div>
+                        <div className="text-xs text-slate-600 mt-0.5">reserve floor</div>
+                      </div>
+                      <div className="bg-navy-900 rounded-lg p-2.5">
+                        <div className="text-xs text-slate-500 mb-1">{o.surplus >= 0 ? 'Surplus' : 'Deficit'}</div>
+                        <div className={`font-semibold text-sm ${o.surplus >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {fmtSign(o.surplus)}
+                        </div>
+                        <div className="text-xs text-slate-600 mt-0.5">vs $500 target</div>
+                      </div>
+                    </div>
+
+                    {/* Monthly projection toggle */}
+                    {o.reserveProjection.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => toggleExpanded(o.id)}
+                          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+                        >
+                          {expanded[o.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          Monthly projection ({o.reserveProjection.length} months)
+                        </button>
+
+                        {expanded[o.id] && (
+                          <div className="mt-3 rounded-lg overflow-hidden border border-navy-700">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-navy-900 text-slate-500">
+                                  <th className="text-left px-3 py-2 font-medium">Month</th>
+                                  <th className="text-right px-3 py-2 font-medium">Net Share</th>
+                                  <th className="text-right px-3 py-2 font-medium">End Balance</th>
+                                  <th className="text-right px-3 py-2 font-medium">vs $500</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {o.reserveProjection.map((m, idx) => {
+                                  const diff = m.endBalance - RESERVE_TARGET;
+                                  const balColor = m.endBalance >= RESERVE_TARGET ? 'text-emerald-400' : m.endBalance >= RESERVE_TARGET / 2 ? 'text-yellow-400' : 'text-red-400';
+                                  return (
+                                    <tr key={m.month} className={`border-t border-navy-700/50 ${idx % 2 === 0 ? 'bg-navy-900/30' : ''}`}>
+                                      <td className="px-3 py-2 text-slate-300">
+                                        {m.label}
+                                        {m.isCurrent && <span className="ml-1 text-blue-400 text-xs">(actual)</span>}
+                                        {m.projected && <span className="ml-1 text-slate-600">(proj)</span>}
+                                      </td>
+                                      <td className={`px-3 py-2 text-right ${m.isCurrent ? 'text-slate-600' : m.netShare >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {m.isCurrent ? '—' : fmtSign(m.netShare)}
+                                      </td>
+                                      <td className={`px-3 py-2 text-right font-medium ${balColor}`}>
+                                        {fmt(m.endBalance)}
+                                      </td>
+                                      <td className={`px-3 py-2 text-right ${diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {fmtSign(diff)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+
               {canEdit && (
-                <div className="flex justify-end gap-2 pt-3 border-t border-navy-700">
+                <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-navy-700">
                   <button onClick={() => openEdit(o)} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white"><Pencil size={12} /> Edit</button>
                   <button onClick={() => remove(o.id)} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400"><Trash2 size={12} /> Delete</button>
                 </div>

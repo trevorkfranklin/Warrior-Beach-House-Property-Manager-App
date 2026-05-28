@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, Upload, Home, DollarSign, TrendingUp,
-  CalendarDays, LogOut, ShieldCheck, Bell, MessageSquare, Waves, Users, TableProperties,
+  CalendarDays, LogOut, ShieldCheck, Bell, MessageSquare, Users, TableProperties,
 } from 'lucide-react';
 import { useAuth } from '../context/Auth';
 import { useNotificationCount } from '../pages/Notifications';
@@ -28,14 +28,8 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 h-screen flex flex-col flex-shrink-0 bg-navy-900 border-r border-navy-700">
-      <div className="flex items-center gap-3 px-5 py-6 border-b border-navy-700 flex-shrink-0">
-        <div className="w-11 h-11 bg-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
-          <Waves size={22} className="text-white" />
-        </div>
-        <div>
-          <div className="font-bold text-white text-base leading-tight">Warrior Beach House</div>
-          <div className="text-xs text-slate-500">18611 Warrior Rd, Galveston</div>
-        </div>
+      <div className="border-b border-navy-700 flex-shrink-0 flex justify-center px-4 py-3">
+        <img src="/logo-v2.png" alt="Warrior Beach House" className="w-48 object-contain rounded-xl" />
       </div>
 
       {session && (

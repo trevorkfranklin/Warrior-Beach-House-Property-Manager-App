@@ -3,7 +3,7 @@ import { Waves, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/Auth';
 
 function AccountForm({ buttonLabel, onSubmit, showRole = false }) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail]     = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole]         = useState('viewer');
   const [showPwd, setShowPwd]   = useState(false);
@@ -14,10 +14,10 @@ function AccountForm({ buttonLabel, onSubmit, showRole = false }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username || !password) return;
+    if (!email || !password) return;
     setLoading(true);
     setError('');
-    const result = await onSubmit(username, password, role, username);
+    const result = await onSubmit(email, password, role);
     if (result?.error) setError(result.error);
     setLoading(false);
   };
@@ -26,7 +26,7 @@ function AccountForm({ buttonLabel, onSubmit, showRole = false }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-xs text-slate-400 block mb-1">Email</label>
-        <input type="email" value={username} onChange={e => setUsername(e.target.value)} className={inputCls} autoFocus autoComplete="email" />
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} autoFocus autoComplete="email" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block mb-1">Password</label>
@@ -47,7 +47,7 @@ function AccountForm({ buttonLabel, onSubmit, showRole = false }) {
         </div>
       )}
       {error && <p className="text-red-400 text-sm">{error}</p>}
-      <button type="submit" disabled={loading || !username || !password}
+      <button type="submit" disabled={loading || !email || !password}
         className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">
         {loading ? 'Please wait…' : buttonLabel}
       </button>
@@ -56,7 +56,15 @@ function AccountForm({ buttonLabel, onSubmit, showRole = false }) {
 }
 
 export default function Login() {
-  const { login, createUser, needsSetup } = useAuth();
+  const { login, createUser, needsSetup, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="h-screen bg-navy-900 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-navy-900 flex items-center justify-center p-4 overflow-auto">
@@ -79,9 +87,9 @@ export default function Login() {
               <AccountForm
                 buttonLabel="Create Account & Sign In"
                 showRole={false}
-                onSubmit={async (u, p) => {
-                  const r = await createUser(u, p, 'admin');
-                  if (r.success) await login(u, p);
+                onSubmit={async (email, password) => {
+                  const r = await createUser(email, password, 'admin');
+                  if (r.success) await login(email, password);
                   return r;
                 }}
               />

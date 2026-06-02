@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Settings2, Check, X, Plus, Trash2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, sampleReservations, sampleOwners, sampleHOADues } from '../data/sampleData';
+import { useTransactions } from '../hooks/useTransactions';
+import { useReservations } from '../hooks/useReservations';
+import { useOwners } from '../hooks/useOwners';
+import { useHoaDues } from '../hooks/useHoaDues';
+import { useAppSetting } from '../hooks/useAppSetting';
 import { txInMonth, amountForMonth } from '../utils/transactions';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -29,20 +32,20 @@ const EXPENSE_ITEMS = [
 const CITY_OF_GALVESTON = /city\s+of\s+galveston/i;
 
 export default function CashflowDetails() {
-  const [transactions]                    = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [reservations]                    = useLocalStorage('wbh_reservations', sampleReservations);
-  const [budgets, setBudgets]             = useLocalStorage('wbh_cashflow_budgets', DEFAULT_BUDGETS);
-  const [extraExpenses, setExtraExpenses] = useLocalStorage('wbh_cashflow_extra', []);
-  const [monthly, setMonthly]             = useLocalStorage('wbh_cashflow_monthly', {});
-  const [monthItems, setMonthItems]       = useLocalStorage('wbh_cashflow_month_items', {});
-  const [sfAccounts]                      = useLocalStorage('wbh_simplefin_accounts', {});
-  const [owners]                          = useLocalStorage('wbh_owners', sampleOwners);
-  const [hoaRecords]                      = useLocalStorage('wbh_hoa_dues', sampleHOADues);
-  const [ownerReserveStarts]              = useLocalStorage('wbh_owner_reserve_starts', {});
+  const { transactions }              = useTransactions();
+  const { reservations }              = useReservations();
+  const { owners }                    = useOwners();
+  const { hoaDues: hoaRecords }       = useHoaDues();
+  const [budgets, setBudgets]         = useAppSetting('cashflow_budgets', DEFAULT_BUDGETS);
+  const [extraExpenses, setExtraExpenses] = useAppSetting('cashflow_extra', []);
+  const [monthly, setMonthly]         = useAppSetting('cashflow_monthly', {});
+  const [monthItems, setMonthItems]   = useAppSetting('cashflow_month_items', {});
+  const [sfAccounts]                  = useAppSetting('simplefin_accounts', {});
+  const [ownerReserveStarts]          = useAppSetting('owner_reserve_starts', {});
 
-  const [projStartBal, setProjStartBal]     = useLocalStorage('wbh_cashflow_proj_start', 0);
-  const [startBals, setStartBals]           = useLocalStorage('wbh_cashflow_start_bals', {});
-  const [endBals, setEndBals]               = useLocalStorage('wbh_cashflow_end_bals', {});
+  const [projStartBal, setProjStartBal] = useAppSetting('cashflow_proj_start', 0);
+  const [startBals, setStartBals]       = useAppSetting('cashflow_start_bals', {});
+  const [endBals, setEndBals]           = useAppSetting('cashflow_end_bals', {});
 
   const [editingBudgets, setEditingBudgets] = useState(false);
   const [budgetDraft, setBudgetDraft]       = useState(DEFAULT_BUDGETS);
@@ -121,13 +124,21 @@ export default function CashflowDetails() {
   const incomeByPayMonth = useMemo(() => {
     const map = {};
     for (const r of reservations) {
-      if (r.status === 'Cancelled' || !r.checkIn) continue;
-      const [yr, mo] = r.checkIn.slice(0, 7).split('-').map(Number);
-      const payYr = mo === 12 ? yr + 1 : yr;
-      const payMo = mo === 12 ? 1 : mo + 1;
-      const pay   = `${payYr}-${String(payMo).padStart(2, '0')}`;
-      const protection = r.isOwnerHold ? 0 : Number(r.nights || 0) * PROTECTION_PER_NIGHT;
-      map[pay] = (map[pay] || 0) + Number(r.netRent || 0) - protection;
+      if (r.status === 'Cancelled' || !r.checkIn || !r.checkOut) continue;
+      const totalNights = r.nights || 0;
+      if (totalNights <= 0) continue;
+      const protection  = r.isOwnerHold ? 0 : totalNights * PROTECTION_PER_NIGHT;
+      const netPerNight = (Number(r.netRent || 0) - protection) / totalNights;
+      let d = new Date(r.checkIn + 'T12:00:00');
+      const out = new Date(r.checkOut + 'T12:00:00');
+      while (d < out) {
+        const [yr, mo] = d.toISOString().slice(0, 7).split('-').map(Number);
+        const payMo = mo === 12 ? 1 : mo + 1;
+        const payYr = mo === 12 ? yr + 1 : yr;
+        const pay = `${payYr}-${String(payMo).padStart(2, '0')}`;
+        map[pay] = (map[pay] || 0) + netPerNight;
+        d.setDate(d.getDate() + 1);
+      }
     }
     return map;
   }, [reservations]);
@@ -156,11 +167,15 @@ export default function CashflowDetails() {
   const rows = useMemo(() => slots.map(({ label, month, isPast, isCurrent }) => {
     const isActual = isPast || isCurrent;
 
+    const txs = transactions.filter(t => !t.excluded && txInMonth(t, month));
+    const actualIncome = txs.filter(t => t.type === 'Income' && t.category !== 'Cash Flow Support')
+                            .reduce((s, t) => s + amountForMonth(t, month), 0);
     let income;
-    if (isActual) {
-      const txs = transactions.filter(t => !t.excluded && txInMonth(t, month));
-      income = txs.filter(t => t.type === 'Income' && t.category !== 'Cash Flow Support')
-                  .reduce((s, t) => s + amountForMonth(t, month), 0);
+    if (isPast) {
+      income = actualIncome;
+    } else if (isCurrent) {
+      // Use actuals if recorded, otherwise fall back to projected reservation income
+      income = actualIncome > 0 ? actualIncome : (incomeByPayMonth[month] || 0);
     } else {
       income = incomeByPayMonth[month] || 0;
     }
@@ -178,15 +193,16 @@ export default function CashflowDetails() {
         windstormInsurance: sum(txs.filter(t => t.category === 'Insurance')),
       };
     } else if (isCurrent) {
-      const txs  = transactions.filter(t => !t.excluded && txInMonth(t, month) && t.type === 'Expense' && t.category !== 'Cash Flow Support');
-      const sum  = (arr) => arr.reduce((s, t) => s + amountForMonth(t, month), 0);
-      const utils = txs.filter(t => t.category === 'Utilities');
+      const etxs  = transactions.filter(t => !t.excluded && txInMonth(t, month) && t.type === 'Expense' && t.category !== 'Cash Flow Support');
+      const sum   = (arr) => arr.reduce((s, t) => s + amountForMonth(t, month), 0);
+      const utils = etxs.filter(t => t.category === 'Utilities');
+      const hasActualExpenses = etxs.length > 0;
       expenseItems = {
-        mortgage:           monthly[month]?.mortgage           ?? sum(txs.filter(t => t.category === 'Mortgage')),
-        cableInternet:      monthly[month]?.cableInternet      ?? sum(txs.filter(t => t.category === 'Internet / Cable')),
-        electricity:        monthly[month]?.electricity        ?? sum(utils.filter(t => !CITY_OF_GALVESTON.test(t.description))),
-        waterTrash:         monthly[month]?.waterTrash         ?? sum(utils.filter(t =>  CITY_OF_GALVESTON.test(t.description))),
-        windstormInsurance: monthly[month]?.windstormInsurance ?? sum(txs.filter(t => t.category === 'Insurance')),
+        mortgage:           monthly[month]?.mortgage           ?? (hasActualExpenses ? sum(etxs.filter(t => t.category === 'Mortgage'))           : (budgets.mortgage           ?? 0)),
+        cableInternet:      monthly[month]?.cableInternet      ?? (hasActualExpenses ? sum(etxs.filter(t => t.category === 'Internet / Cable'))   : (budgets.cableInternet      ?? 0)),
+        electricity:        monthly[month]?.electricity        ?? (hasActualExpenses ? sum(utils.filter(t => !CITY_OF_GALVESTON.test(t.description))) : (budgets.electricity   ?? 0)),
+        waterTrash:         monthly[month]?.waterTrash         ?? (hasActualExpenses ? sum(utils.filter(t =>  CITY_OF_GALVESTON.test(t.description))) : (budgets.waterTrash    ?? 0)),
+        windstormInsurance: monthly[month]?.windstormInsurance ?? (hasActualExpenses ? sum(etxs.filter(t => t.category === 'Insurance'))          : (budgets.windstormInsurance ?? 0)),
       };
     } else {
       expenseItems = Object.fromEntries(
@@ -241,22 +257,24 @@ export default function CashflowDetails() {
       runningBals[o.id] = ownerReserveStarts[o.id] != null ? Number(ownerReserveStarts[o.id]) : null;
     }
     return slots.map(({ month, isPast, isCurrent }, i) => {
-      if (isPast) return { month, ownerBals: {}, cfsPerOwner: {}, preBalance: {}, startBalance: {}, netShare: {}, totalCFS: 0 };
+      if (isPast) return { month, ownerBals: {}, cfsPerOwner: {}, preBalance: {}, startBalance: {}, netShare: {}, cleaningPoolCredit: {}, cleaningFee: {}, totalCFS: 0 };
 
-      const row         = rows[i];
-      const ownerBals   = {};
-      const cfsPerOwner = {};
-      const preBalance  = {};
-      const startBalance= {};
-      const netShare    = {};
-      let   totalCFS    = 0;
+      const row                = rows[i];
+      const ownerBals          = {};
+      const cfsPerOwner        = {};
+      const preBalance         = {};
+      const startBalance       = {};
+      const netShare           = {};
+      const cleaningPoolCredit = {};
+      const cleaningFee        = {};
+      let   totalCFS           = 0;
 
       // Prior month — cleaning fees from holds in M-1 are charged in M (same timing as rental income)
       const [slotYr, slotMo] = month.split('-').map(Number);
       const priorMonthStr = `${slotMo === 1 ? slotYr - 1 : slotYr}-${String(slotMo === 1 ? 12 : slotMo - 1).padStart(2, '0')}`;
 
       // Total cleaning from ALL owners' prior-month holds — paid into the property pool
-      const totalCleaning = isCurrent ? 0 : owners.reduce((sum, own) =>
+      const totalCleaning = owners.reduce((sum, own) =>
         sum + reservations.filter(r =>
           r.isOwnerHold && r.ownerId === own.id &&
           r.status !== 'Cancelled' && r.checkIn?.slice(0, 7) === priorMonthStr
@@ -275,34 +293,26 @@ export default function CashflowDetails() {
         const pct = (o.ownershipPercent || 0) / 100;
 
         // This owner's own cleaning fees — deducted after taking their pool share
-        const ownCleaning = isCurrent ? 0 : reservations.filter(r =>
+        const ownCleaning = reservations.filter(r =>
           r.isOwnerHold && r.ownerId === o.id &&
           r.status !== 'Cancelled' && r.checkIn?.slice(0, 7) === priorMonthStr
         ).length * OWNER_CLEANING_FEE;
 
-        const endBal = runningBals[o.id] + adjustedNet * pct - ownCleaning;
+        const endBal    = runningBals[o.id] + adjustedNet * pct - ownCleaning;
+        const cfsNeeded = Math.max(0, RESERVE_TARGET - endBal);
 
-        if (isCurrent) {
-          // Entered balance IS the current actual state — carry it forward unchanged, no net adjustment
-          ownerBals[o.id]    = runningBals[o.id];
-          cfsPerOwner[o.id]  = 0;
-          preBalance[o.id]   = runningBals[o.id];
-          startBalance[o.id] = runningBals[o.id];
-          netShare[o.id]     = 0;
-          // runningBals[o.id] intentionally not updated here — June uses entered balance as starting point
-        } else {
-          const cfsNeeded = Math.max(0, RESERVE_TARGET - endBal);
-          ownerBals[o.id]    = cfsNeeded > 0 ? RESERVE_TARGET : endBal;
-          cfsPerOwner[o.id]  = cfsNeeded;
-          preBalance[o.id]   = endBal;
-          startBalance[o.id] = runningBals[o.id];
-          netShare[o.id]     = adjustedNet * pct - ownCleaning;
-          totalCFS           += cfsNeeded;
-          runningBals[o.id]   = ownerBals[o.id];
-        }
+        ownerBals[o.id]          = cfsNeeded > 0 ? RESERVE_TARGET : endBal;
+        cfsPerOwner[o.id]        = cfsNeeded;
+        preBalance[o.id]         = endBal;
+        startBalance[o.id]       = runningBals[o.id];
+        netShare[o.id]           = adjustedNet * pct - ownCleaning;
+        cleaningPoolCredit[o.id] = totalCleaning * pct;
+        cleaningFee[o.id]        = ownCleaning;
+        totalCFS                += cfsNeeded;
+        runningBals[o.id]        = ownerBals[o.id];
       }
 
-      return { month, ownerBals, cfsPerOwner, preBalance, startBalance, netShare, totalCFS };
+      return { month, ownerBals, cfsPerOwner, preBalance, startBalance, netShare, cleaningPoolCredit, cleaningFee, totalCFS };
     });
   }, [slots, rows, owners, ownerReserveStarts, reservations]);
 
@@ -319,7 +329,11 @@ export default function CashflowDetails() {
         continue;
       }
       if (row.isCurrent) {
-        result.push({ month: row.month, startBalance: currentStartBal, endBalance: currentEndBal, supportNeeded: 0 });
+        const reserveEntry  = ownerReserveCalc.find(x => x.month === row.month);
+        const supportNeeded = allOwnersHaveReserves
+          ? (reserveEntry?.totalCFS || 0)
+          : Math.max(0, MIN_BALANCE - (currentStartBal + row.net));
+        result.push({ month: row.month, startBalance: currentStartBal, endBalance: currentEndBal, supportNeeded });
         balance = currentEndBal;
         continue;
       }
@@ -777,25 +791,15 @@ export default function CashflowDetails() {
                   {showCFSDetail && owners.length > 0
                     ? owners.map(o => {
                         const entry  = ownerReserveCalc[i];
-                        const cfsVal = (row.isPast || row.isCurrent)
-                          ? (ownerCFSActual[row.month]?.[o.id] || 0)
-                          : (entry?.cfsPerOwner[o.id] || 0);
-                        const start  = entry?.startBalance[o.id];
-                        const net    = entry?.netShare[o.id];
-                        const pre    = entry?.preBalance[o.id];
-                        const showDetail = !row.isPast && !row.isCurrent && start != null;
+                        const actualCFS = ownerCFSActual[row.month]?.[o.id] || 0;
+                        const cfsVal = row.isPast
+                          ? actualCFS
+                          : row.isCurrent
+                            ? (actualCFS > 0 ? actualCFS : (entry?.cfsPerOwner[o.id] || 0))
+                            : (entry?.cfsPerOwner[o.id] || 0);
                         return (
-                          <td key={`cfs-${o.id}`} className={`px-4 py-3 text-right ${cfsVal > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
-                            <div className={`font-semibold ${cfsVal > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
-                              {cfsVal > 0 ? fmt(cfsVal) : '—'}
-                            </div>
-                            {showDetail && (
-                              <div className="text-xs text-slate-600 mt-0.5 space-y-0.5">
-                                <div>start {fmtDec(start)}</div>
-                                <div>{net >= 0 ? '+' : ''}{fmtDec(net)} net</div>
-                                <div className={pre < RESERVE_TARGET ? 'text-red-500/70' : 'text-slate-600'}>{fmtDec(pre)} pre</div>
-                              </div>
-                            )}
+                          <td key={`cfs-${o.id}`} className={`px-4 py-3 text-right font-semibold ${cfsVal > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
+                            {cfsVal > 0 ? fmt(cfsVal) : '—'}
                           </td>
                         );
                       })
@@ -924,12 +928,11 @@ export default function CashflowDetails() {
         </table>
       </div>
 
-      {/* Cash flow support summary */}
+      {/* Cash flow support detailed breakdown */}
       {totalSupportNeeded > 0 && (
         <div className="bg-navy-800 border border-blue-400/30 rounded-xl p-5">
-          {/* Header row — always visible, click to expand/collapse */}
           <button
-            className="w-full flex items-center justify-between text-left"
+            className="w-full flex items-center justify-between text-left mb-4"
             onClick={() => setShowCFSSummary(v => !v)}
           >
             <div>
@@ -953,51 +956,101 @@ export default function CashflowDetails() {
             </div>
           </button>
 
-          {/* Expanded month-by-month breakdown */}
           {showCFSSummary && (
-            <div className="mt-4 pt-4 border-t border-navy-700">
-              <p className="text-xs text-slate-500 mb-3">
-                {allOwnersHaveReserves
-                  ? `Amount needed each month to keep each owner's reserve balance at or above $${RESERVE_TARGET.toLocaleString()}`
-                  : `Amount needed each month to keep the WF checking balance at or above $${MIN_BALANCE.toLocaleString()}`}
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {projection.filter(p => p.supportNeeded > 0).map(p => {
-                  const [yr, mo] = p.month.split('-').map(Number);
-                  const resEntry = ownerReserveCalc.find(x => x.month === p.month);
-                  return (
-                    <div key={p.month} className="bg-navy-900 border border-blue-400/20 rounded-lg p-3">
-                      <div className="text-xs text-slate-400 mb-1">{MONTHS[mo - 1]} {yr}</div>
-                      <div className="text-lg font-bold text-blue-400">{fmt(p.supportNeeded)}</div>
-                      {allOwnersHaveReserves && resEntry && owners.length > 0 ? (
-                        <div className="mt-2 pt-2 border-t border-navy-800 space-y-1">
-                          {owners.map(o => {
-                            const cfs = resEntry.cfsPerOwner[o.id] || 0;
-                            const bal = resEntry.ownerBals[o.id];
-                            return (
-                              <div key={o.id}>
-                                <div className="flex justify-between items-baseline text-xs">
-                                  <span className="text-slate-400 truncate mr-1">{o.name.split(' ')[0]}</span>
-                                  <span className={`font-semibold shrink-0 ${cfs > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
-                                    {cfs > 0 ? fmt(cfs) : '—'}
-                                  </span>
-                                </div>
-                                {bal != null && (
-                                  <div className={`text-xs text-right ${reserveColor(bal)}`}>
-                                    reserve: {fmtDec(bal)}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-slate-500 mt-0.5">Proj. end bal: {fmt(p.endBalance)}</div>
-                      )}
+            <div className="border-t border-navy-700 pt-4 space-y-5">
+              {projection.filter(p => p.supportNeeded > 0).map(p => {
+                const [yr, mo]   = p.month.split('-').map(Number);
+                const resEntry   = ownerReserveCalc.find(x => x.month === p.month);
+                const rowData    = rows.find(r => r.month === p.month);
+                const monthOwners = allOwnersHaveReserves && resEntry && rowData
+                  ? owners.filter(o => (resEntry.cfsPerOwner[o.id] || 0) > 0)
+                  : [];
+
+                return (
+                  <div key={p.month}>
+                    <div className="flex items-baseline justify-between mb-3">
+                      <div className="text-sm font-semibold text-white">{MONTHS[mo - 1]} {yr}</div>
+                      <div className="text-sm font-bold text-blue-400">{fmt(p.supportNeeded)} total</div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {allOwnersHaveReserves && resEntry && rowData && owners.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {owners.map(o => {
+                          const pct      = (o.ownershipPercent || 0) / 100;
+                          const startBal = resEntry.startBalance[o.id];
+                          const endBal   = resEntry.ownerBals[o.id];
+                          const cfs      = resEntry.cfsPerOwner[o.id] || 0;
+                          const cpCredit = resEntry.cleaningPoolCredit[o.id] || 0;
+                          const cFee     = resEntry.cleaningFee[o.id] || 0;
+
+                          if (startBal == null) return null;
+
+                          // Expense lines for this owner
+                          const expenseLines = EXPENSE_ITEMS
+                            .map(item => ({ label: item.label, amount: (rowData.expenseItems[item.key] || 0) * pct }))
+                            .filter(l => l.amount > 0);
+                          if (rowData.hoaDue > 0) expenseLines.push({ label: 'HOA Dues', amount: rowData.hoaDue * pct });
+                          extraExpenses.forEach(e => {
+                            const amt = (rowData.extraItems[e.id] || 0) * pct;
+                            if (amt > 0) expenseLines.push({ label: e.label, amount: amt });
+                          });
+                          if (rowData.otherTotal > 0) expenseLines.push({ label: 'Other', amount: rowData.otherTotal * pct });
+
+                          return (
+                            <div key={o.id} className="bg-navy-900 rounded-lg p-3 space-y-1.5">
+                              <div className="flex justify-between items-baseline text-xs mb-2">
+                                <span className="text-slate-200 font-medium">{o.name}</span>
+                                <span className="text-slate-500">{o.ownershipPercent}% owner</span>
+                              </div>
+
+                              <div className="flex justify-between text-xs border-b border-navy-700 pb-1.5 mb-1">
+                                <span className="text-slate-400">Starting reserve</span>
+                                <span className="text-slate-300">{fmt(startBal)}</span>
+                              </div>
+
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">Income share</span>
+                                <span className="text-emerald-400">+{fmt(rowData.income * pct)}</span>
+                              </div>
+                              {expenseLines.map((line, i) => (
+                                <div key={i} className="flex justify-between text-xs">
+                                  <span className="text-slate-500">{line.label}</span>
+                                  <span className="text-red-400">-{fmt(line.amount)}</span>
+                                </div>
+                              ))}
+                              {cpCredit > 0 && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-500">Cleaning pool credit</span>
+                                  <span className="text-emerald-400">+{fmt(cpCredit)}</span>
+                                </div>
+                              )}
+                              {cFee > 0 && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-500">Cleaning fee</span>
+                                  <span className="text-red-400">-{fmt(cFee)}</span>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between text-xs border-t border-navy-700 pt-1.5 mt-1">
+                                <span className="text-slate-400">Ending reserve</span>
+                                <span className={`font-medium ${reserveColor(endBal)}`}>{fmt(endBal)}</span>
+                              </div>
+                              <div className="flex justify-between text-xs border-t border-navy-700 pt-1.5 mt-1">
+                                <span className="text-white font-medium">Cash Flow Support Required</span>
+                                <span className={`font-bold ${cfs > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
+                                  {cfs > 0 ? fmt(cfs) : '—'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500">Proj. end bal: {fmt(p.endBalance)}</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

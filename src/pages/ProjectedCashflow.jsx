@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, samplePropertyTaxes, sampleHOADues, sampleReservations } from '../data/sampleData';
+import { useTransactions } from '../hooks/useTransactions';
+import { usePropertyTaxes } from '../hooks/usePropertyTaxes';
+import { useHoaDues } from '../hooks/useHoaDues';
+import { useReservations } from '../hooks/useReservations';
+import { useAppSetting } from '../hooks/useAppSetting';
 import { txInMonth, amountForMonth } from '../utils/transactions';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'emerald' }) {
@@ -53,19 +56,22 @@ const EXPENSE_KEYS = Object.keys(DEFAULT_CASHFLOW_BUDGETS);
 const PROTECTION_PER_NIGHT = 8.54;
 
 export default function ProjectedCashflow() {
-  const [transactions] = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [taxRecords]   = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
-  const [hoaRecords]   = useLocalStorage('wbh_hoa_dues', sampleHOADues);
-  const [reservations] = useLocalStorage('wbh_reservations', sampleReservations);
-  const [sfAccounts]   = useLocalStorage('wbh_simplefin_accounts', {});
-  const [projStartBal]       = useLocalStorage('wbh_cashflow_proj_start', 0);
-  const [startBals]          = useLocalStorage('wbh_cashflow_start_bals', {});
-  const [endBals]            = useLocalStorage('wbh_cashflow_end_bals', {});
-  const [cashflowBudgets]    = useLocalStorage('wbh_cashflow_budgets', DEFAULT_CASHFLOW_BUDGETS);
-  const [cashflowExtra]      = useLocalStorage('wbh_cashflow_extra', []);
-  const [cashflowMonthly]    = useLocalStorage('wbh_cashflow_monthly', {});
-  const [cashflowMonthItems] = useLocalStorage('wbh_cashflow_month_items', {});
-  const [viewMode, setViewMode] = useState('year');
+  const { transactions }              = useTransactions();
+  const { propertyTaxes: taxRecords } = usePropertyTaxes();
+  const { hoaDues: hoaRecords }       = useHoaDues();
+  const { reservations }              = useReservations();
+  const [sfAccounts]       = useAppSetting('simplefin_accounts', {});
+  const [projStartBal]     = useAppSetting('cashflow_proj_start', 0);
+  const [startBals]        = useAppSetting('cashflow_start_bals', {});
+  const [endBals]          = useAppSetting('cashflow_end_bals', {});
+  const [cashflowBudgets]    = useAppSetting('cashflow_budgets', DEFAULT_CASHFLOW_BUDGETS);
+  const [cashflowExtra]      = useAppSetting('cashflow_extra', []);
+  const [cashflowMonthly]    = useAppSetting('cashflow_monthly', {});
+  const [cashflowMonthItems] = useAppSetting('cashflow_month_items', {});
+  const [viewMode, setViewMode]       = useState('year');
+  const [selectedIdx, setSelectedIdx] = useState(null);
+
+  const handleBarClick = (i) => setSelectedIdx(prev => prev === i ? null : i);
 
   const currentYear     = new Date().getFullYear();
   const currentMonthIdx = new Date().getMonth();
@@ -87,17 +93,27 @@ export default function ProjectedCashflow() {
     return { income, expense, net: income - expense };
   }), [transactions, currentYear]);
 
-  // Projected income: net rent from checkIn month M is paid out in month M+1, minus protection deduction
+  // Income is paid the month AFTER the night was stayed.
+  // Cross-month reservations are split proportionally by nights per calendar month.
   const incomeByPayMonth = useMemo(() => {
     const map = {};
     for (const r of reservations) {
-      if (r.status === 'Cancelled' || !r.checkIn) continue;
-      const [yr, mo] = r.checkIn.slice(0, 7).split('-').map(Number);
-      const payYr = mo === 12 ? yr + 1 : yr;
-      const payMo = mo === 12 ? 1 : mo + 1;
-      const pay = `${payYr}-${String(payMo).padStart(2, '0')}`;
-      const protection = r.isOwnerHold ? 0 : Number(r.nights || 0) * PROTECTION_PER_NIGHT;
-      map[pay] = (map[pay] || 0) + Number(r.netRent || 0) - protection;
+      if (r.status === 'Cancelled' || !r.checkIn || !r.checkOut) continue;
+      const totalNights = r.nights || 0;
+      if (totalNights <= 0) continue;
+      const protection  = r.isOwnerHold ? 0 : totalNights * PROTECTION_PER_NIGHT;
+      const netPerNight = (Number(r.netRent || 0) - protection) / totalNights;
+      // Walk each night and assign its income to the following month
+      let d = new Date(r.checkIn + 'T12:00:00');
+      const out = new Date(r.checkOut + 'T12:00:00');
+      while (d < out) {
+        const [yr, mo] = d.toISOString().slice(0, 7).split('-').map(Number);
+        const payMo = mo === 12 ? 1 : mo + 1;
+        const payYr = mo === 12 ? yr + 1 : yr;
+        const pay = `${payYr}-${String(payMo).padStart(2, '0')}`;
+        map[pay] = (map[pay] || 0) + netPerNight;
+        d.setDate(d.getDate() + 1);
+      }
     }
     return map;
   }, [reservations]);
@@ -167,21 +183,29 @@ export default function ProjectedCashflow() {
     const actualExpense = txs.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0);
     const taxDue = (taxByMonth.get(month) || 0) + (hoaByMonth.get(month) || 0);
 
+    const fixedTotal = EXPENSE_KEYS.reduce((s, key) => s + (cashflowMonthly[month]?.[key] ?? cashflowBudgets[key] ?? 0), 0);
+    const extraTotal = (cashflowExtra || []).reduce((s, e) => s + (cashflowMonthly[month]?.[e.id] ?? Number(e.amount || 0)), 0);
+    const otherTotal = (cashflowMonthItems[month] || []).reduce((s, i) => s + Number(i.amount || 0), 0);
+    const budgetExpense = fixedTotal + extraTotal + otherTotal;
+
     let projExpense;
-    if (isPast || isCurrent) {
+    if (isPast) {
       projExpense = actualExpense;
+    } else if (isCurrent) {
+      // Use actuals if present, otherwise fall back to budget so the current month shows something
+      projExpense = actualExpense > 0 ? actualExpense : budgetExpense;
     } else {
-      const fixedTotal = EXPENSE_KEYS.reduce((s, key) => s + (cashflowMonthly[month]?.[key] ?? cashflowBudgets[key] ?? 0), 0);
-      const extraTotal = cashflowExtra.reduce((s, e) => s + (cashflowMonthly[month]?.[e.id] ?? Number(e.amount || 0)), 0);
-      const otherTotal = (cashflowMonthItems[month] || []).reduce((s, i) => s + Number(i.amount || 0), 0);
-      projExpense = fixedTotal + extraTotal + otherTotal;
+      projExpense = budgetExpense;
     }
 
     const cashFlowSupport = (isPast || isCurrent)
       ? txs.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0)
       : 0;
 
-    const income  = isPast || isCurrent ? actualIncome : (incomeByPayMonth[month] || 0);
+    // Current month: use actuals if recorded, otherwise show projected reservation income
+    const income  = isPast ? actualIncome
+      : isCurrent ? (actualIncome > 0 ? actualIncome : (incomeByPayMonth[month] || 0))
+      : (incomeByPayMonth[month] || 0);
     const expense = projExpense + (isPast ? 0 : taxDue);
     return { label, month, income, expense, cashFlowSupport, taxDue: isPast ? 0 : taxDue, net: income - expense, projected: !isPast && !isCurrent, isCurrent };
   }), [chartSlots, transactions, incomeByPayMonth, taxByMonth, hoaByMonth, cashflowBudgets, cashflowExtra, cashflowMonthly, cashflowMonthItems]);
@@ -193,35 +217,45 @@ export default function ProjectedCashflow() {
   const MIN_BALANCE = 1000;
   const currentEndBal = endBals[currentMonthStr] != null ? Number(endBals[currentMonthStr]) : MIN_BALANCE;
 
-  // For each projected month: how much cash must be injected to keep balance >= $1,000
+  // Support calc:
+  //  Past months  → 0 (we don't retroactively project; only actual CFS transactions show)
+  //  Current month → computed from effectiveStartBal + June net vs $1k floor
+  //  Future months → running balance forward from currentEndBal
   const supportCalc = useMemo(() => {
     const items = [];
     let balance = null;
+
     for (let i = 0; i < monthData.length; i++) {
       const m = monthData[i];
+
       if (balance === null) {
         if (m.isCurrent || viewMode === 'forward') {
+          const natural       = effectiveStartBal + m.net;
+          const supportNeeded = m.cashFlowSupport > 0 ? 0 : Math.max(0, MIN_BALANCE - natural);
           balance = currentEndBal;
-          items.push({ supportNeeded: 0, endBalance: currentEndBal });
+          items.push({ supportNeeded, endBalance: currentEndBal });
         } else {
-          items.push({ supportNeeded: null, endBalance: null });
+          // Past month before we've hit the current month
+          items.push({ supportNeeded: 0, endBalance: null });
         }
       } else {
+        // Future months: project forward from running balance
         const natural       = balance + m.net + m.cashFlowSupport;
-        const supportNeeded = m.projected ? Math.max(0, MIN_BALANCE - natural) : 0;
+        const supportNeeded = Math.max(0, MIN_BALANCE - natural);
         balance = supportNeeded > 0 ? MIN_BALANCE : natural;
         items.push({ supportNeeded, endBalance: balance });
       }
     }
     return items;
-  }, [currentEndBal, monthData, viewMode]);
+  }, [effectiveStartBal, currentEndBal, monthData, viewMode]);
 
   const totalSupportNeeded = supportCalc.reduce((s, m) => s + (m.supportNeeded || 0), 0);
 
-  // CFS to display on each income bar: actual for past/current, projected support needed for future
-  const cfsForBar = monthData.map((m, i) =>
-    m.projected ? (supportCalc[i]?.supportNeeded || 0) : m.cashFlowSupport
-  );
+  // CFS bar: actual CFS from transactions when present, else projected support needed
+  const cfsForBar = monthData.map((m, i) => {
+    if (m.cashFlowSupport > 0) return m.cashFlowSupport;
+    return supportCalc[i]?.supportNeeded || 0;
+  });
 
   const maxVal = Math.max(...monthData.map((m, i) => Math.max(m.income + cfsForBar[i], m.expense)), 1);
 
@@ -235,7 +269,7 @@ export default function ProjectedCashflow() {
     <div className="p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Projected Cashflow</h1>
+          <h1 className="text-2xl font-bold text-white">Cashflow Summary</h1>
           <p className="text-slate-400 text-sm mt-1">{viewMode === 'year' ? `${currentYear} — Actuals + forward projections` : '12 months forward from today'}</p>
         </div>
         <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg">
@@ -269,61 +303,164 @@ export default function ProjectedCashflow() {
           </div>
           <div className="flex-1 relative">
             <div className="grid grid-cols-12 gap-3">
-              {monthData.map((m, i) => (
-                <div key={i} className={`relative group ${m.isCurrent ? 'ring-1 ring-slate-500/40 rounded-lg' : ''}`}>
-                  <div className={m.projected ? 'opacity-40' : ''}>
-                    <Bar income={m.income} expense={m.expense} taxDue={m.taxDue ?? 0} cfs={cfsForBar[i]} maxVal={maxVal} height={CHART_H} />
-                    <div className="text-xs text-center text-slate-500 mt-2">{m.label}</div>
-                    <div className={`text-xs text-center font-semibold mt-0.5 ${m.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{m.net >= 0 ? '+' : ''}{fmt(m.net)}</div>
+              {monthData.map((m, i) => {
+                const isSelected = selectedIdx === i;
+                return (
+                  <div key={i}
+                    onClick={() => handleBarClick(i)}
+                    className={`relative cursor-pointer rounded-lg transition-all ${
+                      isSelected ? 'ring-2 ring-emerald-500' :
+                      m.isCurrent ? 'ring-1 ring-slate-500/40' : 'hover:bg-navy-700/20'
+                    }`}>
+                    <div className={m.projected ? 'opacity-40' : ''}>
+                      <Bar income={m.income} expense={m.expense} taxDue={m.taxDue ?? 0} cfs={cfsForBar[i]} maxVal={maxVal} height={CHART_H} />
+                      <div className={`text-xs text-center mt-2 ${isSelected ? 'text-emerald-400 font-medium' : 'text-slate-500'}`}>{m.label}</div>
+                      <div className={`text-xs text-center font-semibold mt-0.5 ${m.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{m.net >= 0 ? '+' : ''}{fmt(m.net)}</div>
+                    </div>
                   </div>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-20 w-44 bg-navy-900 border border-navy-600 rounded-lg p-2.5 text-xs shadow-lg pointer-events-none">
-                    <div className="text-slate-300 font-medium mb-1.5">{m.label}{m.projected ? ' (proj.)' : ''}</div>
-                    <div className="flex justify-between text-emerald-400 mb-0.5"><span>Income</span><span>{fmt(m.income)}</span></div>
-                    <div className="flex justify-between text-red-400 mb-0.5"><span>Expenses</span><span>{fmt(m.expense)}</span></div>
-                    {m.taxDue > 0 && <div className="flex justify-between text-yellow-400 mb-0.5"><span>Taxes/HOA</span><span>{fmt(m.taxDue)}</span></div>}
-                    {cfsForBar[i] > 0 && <div className="flex justify-between text-blue-400 mb-0.5"><span>{m.projected ? 'Proj. support' : 'CFS'}</span><span>{fmt(cfsForBar[i])}</span></div>}
-                    <div className={`flex justify-between font-semibold border-t border-navy-700 mt-1 pt-1 ${m.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}><span>Net</span><span>{m.net >= 0 ? '+' : ''}{fmt(m.net)}</span></div>
-                    {supportCalc?.[i]?.supportNeeded > 0 && (
-                      <div className="flex justify-between text-blue-400 font-semibold border-t border-navy-700 mt-1 pt-1"><span>Support needed</span><span>{fmt(supportCalc[i].supportNeeded)}</span></div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Monthly support breakdown */}
-      {totalSupportNeeded > 0 && (
-        <div className="bg-navy-800 border border-yellow-500/30 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-1">Cash Flow Support Required — Month by Month</h3>
-          <p className="text-xs text-slate-500 mb-4">Amount needed each month to keep the WF checking balance at or above ${MIN_BALANCE.toLocaleString()}</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {chartSlots.map((slot, i) => {
-              const s = supportCalc[i];
-              if (!s || s.supportNeeded === null || s.supportNeeded === 0) return null;
-              return (
-                <div key={slot.month} className="bg-navy-900 border border-yellow-500/20 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 mb-1">{slot.label}</div>
-                  <div className="text-lg font-bold text-yellow-400">{fmt(s.supportNeeded)}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Proj. end bal: {fmtAxis(s.endBalance)}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-4 pt-3 border-t border-navy-700 flex items-center justify-between">
-            <span className="text-sm text-slate-400">Total support needed ({period})</span>
-            <span className="text-lg font-bold text-yellow-400">{fmt(totalSupportNeeded)}</span>
-          </div>
-        </div>
-      )}
+      {/* Month detail panel */}
+      {selectedIdx !== null && (() => {
+        const m    = monthData[selectedIdx];
+        const sc   = supportCalc[selectedIdx];
+        const cfs  = cfsForBar[selectedIdx];
+        const proj = m.projected;
+        const label = `${m.label}${proj ? ' (projected)' : m.isCurrent ? ' (current)' : ''}`;
 
-      {totalSupportNeeded === 0 && (
-        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-sm text-emerald-400">
-          No cash flow support needed — projected balance stays above ${MIN_BALANCE.toLocaleString()} throughout {period}.
-        </div>
-      )}
+        // Income for month M = nights stayed in month M-1, paid out in M.
+        // Cross-month stays are split by night count in the prior month.
+        const [yr, mo] = m.month.split('-').map(Number);
+        const priorMo  = mo === 1 ? 12 : mo - 1;
+        const priorYr  = mo === 1 ? yr - 1 : yr;
+        const priorStr = `${priorYr}-${String(priorMo).padStart(2, '0')}`;
+
+        const contributingRes = reservations
+          .filter(r => r.status !== 'Cancelled' && r.checkIn && r.checkOut && (r.nights || 0) > 0)
+          .map(r => {
+            // Count nights in the prior month
+            let nightsInPrior = 0;
+            let d = new Date(r.checkIn + 'T12:00:00');
+            const out = new Date(r.checkOut + 'T12:00:00');
+            while (d < out) {
+              if (d.toISOString().startsWith(priorStr)) nightsInPrior++;
+              d.setDate(d.getDate() + 1);
+            }
+            if (!nightsInPrior) return null;
+            const totalNights = r.nights;
+            const protection  = r.isOwnerHold ? 0 : totalNights * PROTECTION_PER_NIGHT;
+            const netPerNight = (Number(r.netRent || 0) - protection) / totalNights;
+            return { ...r, nightsInPrior, totalNights, incomeContrib: netPerNight * nightsInPrior };
+          })
+          .filter(Boolean);
+
+        const fmtFull = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        return (
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-white">{label}</h3>
+              <button onClick={() => setSelectedIdx(null)} className="text-slate-500 hover:text-white text-xs">✕ close</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              {/* Income */}
+              <div className="bg-navy-900 rounded-lg p-4">
+                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-3">
+                  Income <span className="text-slate-600 normal-case font-normal">(nights stayed in {priorStr.slice(0,7) === priorStr ? priorStr : priorStr})</span>
+                </div>
+                {contributingRes.length > 0 ? (
+                  <div className="space-y-2">
+                    {contributingRes.map(r => (
+                      <div key={r.id} className="flex justify-between text-xs gap-2">
+                        <span className={`truncate ${r.isOwnerHold ? 'text-yellow-400' : 'text-slate-400'}`}>
+                          {r.isOwnerHold ? 'Owner Hold' : r.guestName}
+                          {r.nightsInPrior < r.totalNights && (
+                            <span className="text-slate-600 ml-1">({r.nightsInPrior}/{r.totalNights} nights)</span>
+                          )}
+                        </span>
+                        <span className={`flex-shrink-0 font-medium ${r.incomeContrib >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {r.incomeContrib >= 0 ? '' : '-'}{fmtFull(Math.abs(r.incomeContrib))}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-sm font-semibold border-t border-navy-700 pt-2 mt-2">
+                      <span className="text-slate-300">Total</span>
+                      <span className={m.income >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtFull(m.income)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{proj ? 'Projected' : 'No stays in prior month'}</span>
+                    <span className="text-emerald-400">{m.income > 0 ? fmtFull(m.income) : '—'}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Expenses */}
+              <div className="bg-navy-900 rounded-lg p-4">
+                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-3">Expenses</div>
+                <div className="space-y-2 text-xs">
+                  {cashflowBudgets.mortgage       > 0 && <div className="flex justify-between"><span className="text-slate-400">Mortgage</span><span className="text-red-400">{fmtFull(cashflowBudgets.mortgage)}</span></div>}
+                  {cashflowBudgets.electricity    > 0 && <div className="flex justify-between"><span className="text-slate-400">Electricity</span><span className="text-red-400">{fmtFull(cashflowBudgets.electricity)}</span></div>}
+                  {cashflowBudgets.waterTrash     > 0 && <div className="flex justify-between"><span className="text-slate-400">Water / Trash</span><span className="text-red-400">{fmtFull(cashflowBudgets.waterTrash)}</span></div>}
+                  {cashflowBudgets.cableInternet  > 0 && <div className="flex justify-between"><span className="text-slate-400">Cable / Internet</span><span className="text-red-400">{fmtFull(cashflowBudgets.cableInternet)}</span></div>}
+                  {cashflowBudgets.windstormInsurance > 0 && <div className="flex justify-between"><span className="text-slate-400">Insurance</span><span className="text-red-400">{fmtFull(cashflowBudgets.windstormInsurance)}</span></div>}
+                  {m.taxDue > 0 && <div className="flex justify-between"><span className="text-yellow-400">Taxes / HOA</span><span className="text-yellow-400">{fmtFull(m.taxDue)}</span></div>}
+                  <div className="flex justify-between text-sm font-semibold border-t border-navy-700 pt-2 mt-2">
+                    <span className="text-slate-300">Total</span>
+                    <span className="text-red-400">{fmtFull(m.expense)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-navy-900 rounded-lg p-4">
+                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-3">Summary</div>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Income</span>
+                    <span className="text-emerald-400">{fmtFull(m.income)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Expenses</span>
+                    <span className="text-red-400">-{fmtFull(m.expense)}</span>
+                  </div>
+                  {cfs > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">{proj ? 'Proj. CFS' : 'Cash Flow Support'}</span>
+                      <span className="text-blue-400">+{fmtFull(cfs)}</span>
+                    </div>
+                  )}
+                  <div className={`flex justify-between text-sm font-bold border-t border-navy-700 pt-2 mt-2 ${m.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span>Net</span>
+                    <span>{m.net >= 0 ? '+' : ''}{fmtFull(m.net)}</span>
+                  </div>
+                  {sc?.endBalance != null && (
+                    <div className="flex justify-between text-xs border-t border-navy-700 pt-2 mt-1">
+                      <span className="text-slate-500">Proj. end balance</span>
+                      <span className={sc.endBalance >= MIN_BALANCE ? 'text-emerald-400' : 'text-red-400'}>{fmtFull(sc.endBalance)}</span>
+                    </div>
+                  )}
+                  {sc?.supportNeeded > 0 && (
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-blue-400">Support needed</span>
+                      <span className="text-blue-400">{fmtFull(sc.supportNeeded)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

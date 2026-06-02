@@ -1,24 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Pencil, X, Check, Home, RefreshCw, TrendingUp, Landmark, Camera } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { defaultProperty, PROPERTY_ID } from '../data/sampleData';
+import { useProperty } from '../hooks/useProperty';
+import { useAppSetting } from '../hooks/useAppSetting';
+import { PROPERTY_ID } from '../data/sampleData';
 import { useAuth } from '../context/Auth';
 import { fetchPropertyEstimates } from '../utils/rentcast';
 import { fetchAccounts } from '../utils/simplefin';
 
 function PropertyPhoto() {
+  const [photoData, setPhotoData] = useAppSetting('property_photo', null);
   const [url, setUrl]     = useState(null);
   const [hover, setHover] = useState(false);
   const fileRef           = useRef();
-  const DB_KEY            = 'wbh_property_photo';
 
   useEffect(() => {
-    const stored = localStorage.getItem(DB_KEY);
-    if (stored) {
-      const blob = dataURLtoBlob(stored);
-      setUrl(URL.createObjectURL(blob));
+    if (photoData) {
+      const blob = dataURLtoBlob(photoData);
+      const objUrl = URL.createObjectURL(blob);
+      setUrl(objUrl);
+      return () => URL.revokeObjectURL(objUrl);
     }
-  }, []);
+  }, [photoData]);
 
   function dataURLtoBlob(dataURL) {
     const [header, data] = dataURL.split(',');
@@ -34,20 +36,14 @@ function PropertyPhoto() {
     const file = e.target.files[0];
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      localStorage.setItem(DB_KEY, ev.target.result);
-      if (url) URL.revokeObjectURL(url);
-      const blob = dataURLtoBlob(ev.target.result);
-      setUrl(URL.createObjectURL(blob));
-    };
+    reader.onload = (ev) => { setPhotoData(ev.target.result); };
     reader.readAsDataURL(file);
     if (fileRef.current) fileRef.current.value = '';
   };
 
   const handleRemove = (ev) => {
     ev.stopPropagation();
-    localStorage.removeItem(DB_KEY);
-    if (url) URL.revokeObjectURL(url);
+    setPhotoData(null);
     setUrl(null);
   };
 
@@ -112,12 +108,12 @@ function Modal({ form, setForm, onSave, onClose, sfAccounts }) {
 }
 
 export default function Property() {
-  const [property, setProperty]     = useLocalStorage('wbh_property', defaultProperty);
-  const [rentcastData, setRentcastData] = useLocalStorage('wbh_rentcast', {});
-  const [sfAccounts, setSfAccounts] = useLocalStorage('wbh_simplefin_accounts', {});
-  const [sfAccessUrl]               = useLocalStorage('wbh_simplefin_url', '');
-  const [mortgageSyncDate, setMortgageSyncDate] = useLocalStorage('wbh_mortgage_sync_date', '');
-  const { canEdit }                 = useAuth();
+  const { property, saveProperty }      = useProperty();
+  const [rentcastData, setRentcastData] = useAppSetting('rentcast', {});
+  const [sfAccounts, setSfAccounts]     = useAppSetting('simplefin_accounts', {});
+  const [sfAccessUrl]                   = useAppSetting('simplefin_url', '');
+  const [, setMortgageSyncDate]         = useAppSetting('mortgage_sync_date', '');
+  const { canEdit }                     = useAuth();
   const [modal, setModal]           = useState(false);
   const [form, setForm]             = useState({});
   const [syncing, setSyncing]       = useState(false);
@@ -167,8 +163,8 @@ export default function Property() {
   }, [sfAccessUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openEdit = () => { setForm({ ...property }); setModal(true); };
-  const save = () => {
-    setProperty({ ...form, purchasePrice: Number(form.purchasePrice), bedrooms: Number(form.bedrooms), bathrooms: Number(form.bathrooms), sqft: Number(form.sqft) });
+  const save = async () => {
+    await saveProperty({ ...form, purchasePrice: Number(form.purchasePrice), bedrooms: Number(form.bedrooms), bathrooms: Number(form.bathrooms), sqft: Number(form.sqft) });
     setModal(false);
   };
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { samplePropertyTaxes, sampleTransactions } from '../data/sampleData';
+import { usePropertyTaxes } from '../hooks/usePropertyTaxes';
+import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../context/Auth';
 
 const EMPTY = { id: '', taxYear: new Date().getFullYear(), taxType: '', annualAmount: '', dueDate: '', notes: '' };
@@ -51,8 +51,8 @@ function Modal({ title, form, setForm, onSave, onClose }) {
 }
 
 export default function PropertyTaxes() {
-  const [taxRecords, setTaxRecords] = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
-  const [transactions]              = useLocalStorage('wbh_transactions', sampleTransactions);
+  const { propertyTaxes: taxRecords, addPropertyTax, updatePropertyTax, deletePropertyTax } = usePropertyTaxes();
+  const { transactions } = useTransactions();
   const [modal, setModal]           = useState(null);
   const [form, setForm]             = useState(EMPTY);
   const { canEdit }                 = useAuth();
@@ -125,14 +125,14 @@ export default function PropertyTaxes() {
     setForm({ id: e.id, taxYear: e.taxYear, taxType: e.taxType || '', annualAmount: e.annualAmount, dueDate: e.dueDate || '', notes: e.notes || '' });
     setModal('edit');
   };
-  const save = () => {
+  const save = async () => {
     if (!form.taxYear) return;
     const record = { ...form, annualAmount: Number(form.annualAmount) || 0 };
-    if (modal === 'add') setTaxRecords(prev => [...prev, record]);
-    else setTaxRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    if (modal === 'add') await addPropertyTax(record);
+    else await updatePropertyTax(record);
     setModal(null);
   };
-  const remove = (id) => { if (confirm('Delete this tax record?')) setTaxRecords(prev => prev.filter(r => r.id !== id)); };
+  const remove = async (id) => { if (confirm('Delete this tax record?')) await deletePropertyTax(id); };
 
   const statusBadge = (status) => {
     const cls = status === 'Paid'     ? 'bg-emerald-400/10 text-emerald-400'

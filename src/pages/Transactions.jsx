@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, Check, Ban, Download, Sparkles } from 'lucide-react';
 
 const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, sampleOwners, TRANSACTION_CATEGORIES } from '../data/sampleData';
+import { useTransactions } from '../hooks/useTransactions';
+import { useOwners } from '../hooks/useOwners';
+import { useAppSetting } from '../hooks/useAppSetting';
+import { TRANSACTION_CATEGORIES } from '../data/sampleData';
 import { buildPatternMap, suggest, isUncategorized } from '../utils/categorizer';
 import { useAuth } from '../context/Auth';
 
@@ -92,8 +94,10 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
 }
 
 export default function Transactions() {
-  const [transactions, setTransactions] = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [owners]            = useLocalStorage('wbh_owners', sampleOwners);
+  const { transactions, addTransaction, updateTransaction, deleteTransaction, updateTransactionCategory, toggleExclude, bulkUpdateCategories } = useTransactions();
+  const { owners }       = useOwners();
+  const [apiKey]         = useAppSetting('openrouter_key', '');
+  const [aiModel]        = useAppSetting('vision_model', 'deepseek/deepseek-v4-flash');
   const [modal, setModal]   = useState(null);
   const [form, setForm]     = useState(EMPTY);
   const { canEdit }         = useAuth();
@@ -129,34 +133,25 @@ export default function Transactions() {
 
   const patternMap = useMemo(() => buildPatternMap(transactions), [transactions]);
 
-  const applySuggestion = (id) => {
-    const tx = transactions.find(t => t.id === id);
-    if (!tx) return;
-    const hit = suggest(tx.description, patternMap);
-    if (!hit) return;
-    setTransactions(prev => prev.map(t =>
-      t.id === id ? { ...t, category: hit.category, categorized: true } : t
-    ));
-  };
-
-  const toggleExclude = (id) => setTransactions(prev => prev.map(t => t.id === id ? { ...t, excluded: !t.excluded } : t));
-
   const openAdd  = () => { setForm({ ...EMPTY, id: crypto.randomUUID() }); setModal('add'); };
   const openEdit = (tx) => { setForm({ ...tx }); setModal('edit'); };
-  const save = () => {
+
+  const save = async () => {
     if (!form.description || !form.amount) return;
     const record = { ...form, amount: Number(form.amount), categorized: !!form.category };
-    if (modal === 'add') setTransactions(prev => [...prev, record]);
-    else setTransactions(prev => prev.map(t => t.id === record.id ? record : t));
+    if (modal === 'add') await addTransaction(record);
+    else await updateTransaction(record);
     setModal(null);
   };
-  const remove = (id) => { if (confirm('Delete this transaction?')) setTransactions(prev => prev.filter(t => t.id !== id)); };
+
+  const remove = async (id) => {
+    if (confirm('Delete this transaction?')) await deleteTransaction(id);
+  };
 
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [aiError, setAiError]           = useState('');
 
   const suggestWithAI = async () => {
-    const apiKey = (() => { try { return JSON.parse(localStorage.getItem('wbh_openrouter_key') || '""'); } catch { return ''; } })();
     if (!apiKey) { setAiError('OpenRouter API key not set — add it in Import → Screenshot first.'); return; }
 
     const uncategorized = transactions.filter(t => isUncategorized(t) && !t.excluded);
@@ -164,7 +159,6 @@ export default function Transactions() {
 
     setAiSuggesting(true); setAiError('');
     try {
-      // Batch in chunks of 50 to stay within token limits
       const CHUNK = 50;
       const allSuggestions = [];
       for (let i = 0; i < uncategorized.length; i += CHUNK) {
@@ -199,7 +193,7 @@ ${chunk.map(t => `{"id":"${t.id}","description":"${t.description}","amount":${t.
             'HTTP-Referer': 'https://warrior-beach-house.local',
             'X-Title': 'Warrior Beach House',
           },
-          body: JSON.stringify({ model: 'google/gemma-4-31b-it:free', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] }),
+          body: JSON.stringify({ model: aiModel, max_tokens: 4096, messages: [{ role: 'user', content: prompt }] }),
         });
         if (!res.ok) throw new Error(`API error ${res.status}`);
         const data = await res.json();
@@ -208,14 +202,9 @@ ${chunk.map(t => `{"id":"${t.id}","description":"${t.description}","amount":${t.
         if (match) allSuggestions.push(...JSON.parse(match[0]));
       }
 
-      let applied = 0;
-      setTransactions(prev => prev.map(t => {
-        const s = allSuggestions.find(s => s.id === t.id);
-        if (!s?.category || !TRANSACTION_CATEGORIES.includes(s.category)) return t;
-        applied++;
-        return { ...t, category: s.category, categorized: true };
-      }));
-      setAiError(`✓ Categorized ${applied} of ${uncategorized.length} transactions.`);
+      const validSuggestions = allSuggestions.filter(s => s.category && TRANSACTION_CATEGORIES.includes(s.category));
+      const { count } = await bulkUpdateCategories(validSuggestions);
+      setAiError(`✓ Categorized ${count} of ${uncategorized.length} transactions.`);
     } catch (e) {
       setAiError('AI suggestion failed: ' + e.message);
     } finally {
@@ -357,7 +346,7 @@ ${chunk.map(t => `{"id":"${t.id}","description":"${t.description}","amount":${t.
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      {canEdit && hit && <button onClick={() => applySuggestion(tx.id)} title="Confirm suggestion" className="text-amber-400 hover:text-emerald-400"><Check size={13} /></button>}
+                      {canEdit && hit && <button onClick={() => updateTransactionCategory(tx.id, hit.category)} title="Confirm suggestion" className="text-amber-400 hover:text-emerald-400"><Check size={13} /></button>}
                       {canEdit && <button onClick={() => toggleExclude(tx.id)} title={tx.excluded ? 'Re-include' : 'Exclude'} className={`${tx.excluded ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-orange-400'}`}><Ban size={14} /></button>}
                       {canEdit && <button onClick={() => openEdit(tx)} className="text-slate-400 hover:text-white"><Pencil size={14} /></button>}
                       {canEdit && <button onClick={() => remove(tx.id)} className="text-slate-400 hover:text-red-400"><Trash2 size={14} /></button>}

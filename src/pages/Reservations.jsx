@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { Plus, Pencil, Trash2, X, Check, CalendarDays, Download, Home } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleReservations, sampleOwners } from '../data/sampleData';
+import { useReservations } from '../hooks/useReservations';
+import { useOwners } from '../hooks/useOwners';
 import { useAuth } from '../context/Auth';
 
 const MGMT_RATE          = 0.23;
@@ -383,8 +383,8 @@ function reservationStatus(r, today) {
 }
 
 export default function Reservations() {
-  const [reservations, setReservations] = useLocalStorage('wbh_reservations', sampleReservations);
-  const [owners]                        = useLocalStorage('wbh_owners', sampleOwners);
+  const { reservations, addReservation, updateReservation, deleteReservation } = useReservations();
+  const { owners } = useOwners();
   const [modal, setModal] = useState(null);
   const [form, setForm]   = useState(EMPTY);
   const { canEdit }       = useAuth();
@@ -433,7 +433,7 @@ export default function Reservations() {
   const openOwnerHold = () => { setForm({ ...EMPTY, id: crypto.randomUUID(), isOwnerHold: true, guestName: 'Owner Hold' }); setModal('add'); };
   const openEdit      = (r) => { setForm({ ...r }); setModal('edit'); };
 
-  const save = () => {
+  const save = async () => {
     if (!form.isOwnerHold && !form.guestName) return;
     if (!form.checkIn || !form.checkOut) return;
     const nights      = computeNights(form.checkIn, form.checkOut);
@@ -445,13 +445,13 @@ export default function Reservations() {
       guestName: isOwnerHold ? 'Owner Hold' : form.guestName,
       grossRent, nights, managementFee, netRent, grossNightlyRate, netNightlyRate, isOwnerHold,
     };
-    if (modal === 'add') setReservations(prev => [...prev, record]);
-    else setReservations(prev => prev.map(r => r.id === record.id ? record : r));
+    if (modal === 'add') await addReservation(record);
+    else await updateReservation(record);
     setModal(null);
   };
 
-  const remove = (id) => {
-    if (confirm('Delete this reservation?')) setReservations(prev => prev.filter(r => r.id !== id));
+  const remove = async (id) => {
+    if (confirm('Delete this reservation?')) await deleteReservation(id);
   };
 
   const exportCSV = () => {

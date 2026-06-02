@@ -2,18 +2,13 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, Bot, User, Trash2, Key, X } from 'lucide-react';
 
 const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, sampleReservations, samplePropertyTaxes, sampleHOADues, defaultProperty } from '../data/sampleData';
+import { useProperty } from '../hooks/useProperty';
+import { useTransactions } from '../hooks/useTransactions';
+import { useReservations } from '../hooks/useReservations';
+import { usePropertyTaxes } from '../hooks/usePropertyTaxes';
+import { useHoaDues } from '../hooks/useHoaDues';
+import { useAppSetting } from '../hooks/useAppSetting';
 
-const FREE_MODELS = [
-  { id: 'deepseek/deepseek-v4-flash:free',                    label: 'DeepSeek V4 Flash' },
-  { id: 'google/gemma-4-31b-it:free',                         label: 'Google Gemma 4 31B' },
-  { id: 'openai/gpt-oss-120b:free',                           label: 'OpenAI GPT-OSS 120B' },
-  { id: 'openai/gpt-oss-20b:free',                            label: 'OpenAI GPT-OSS 20B' },
-  { id: 'nvidia/nemotron-3-super-120b-a12b:free',             label: 'NVIDIA Nemotron 3 Super 120B' },
-  { id: 'minimax/minimax-m2.5:free',                          label: 'MiniMax M2.5' },
-  { id: 'openrouter/owl-alpha',                               label: 'OpenRouter Owl Alpha' },
-];
 
 const SUGGESTED = [
   'What is my total revenue from reservations this year?',
@@ -101,16 +96,16 @@ ${hoaLines || '  None'}`;
 }
 
 export default function Chat() {
-  const [property]    = useLocalStorage('wbh_property', defaultProperty);
-  const [reservations]= useLocalStorage('wbh_reservations', sampleReservations);
-  const [transactions]= useLocalStorage('wbh_transactions', sampleTransactions);
-  const [taxes]       = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
-  const [hoa]         = useLocalStorage('wbh_hoa_dues', sampleHOADues);
+  const { property }          = useProperty();
+  const { reservations }      = useReservations();
+  const { transactions }      = useTransactions();
+  const { propertyTaxes: taxes } = usePropertyTaxes();
+  const { hoaDues: hoa }      = useHoaDues();
 
-  const [apiKey, setApiKey]     = useLocalStorage('wbh_openrouter_key', '');
+  const [apiKey, setApiKey]   = useAppSetting('openrouter_key', '');
   const [showKey, setShowKey]   = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
-  const [model, setModel]       = useState(FREE_MODELS[0].id);
+  const [model, setModel]       = useAppSetting('vision_model', 'deepseek/deepseek-v4-flash');
   const [messages, setMessages] = useState([]);
   const [input, setInput]       = useState('');
   const [loading, setLoading]   = useState(false);
@@ -213,9 +208,12 @@ Guidelines:
           <p className="text-slate-400 text-sm mt-0.5">Ask anything about your beach house finances or STR strategy</p>
         </div>
         <div className="flex items-center gap-3">
-          <select value={model} onChange={e => setModel(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white">
-            {FREE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-          </select>
+          <input
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            placeholder="model-id (e.g. meta-llama/llama-3.1-8b-instruct:free)"
+            className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white w-80 placeholder-slate-600"
+          />
           <button
             onClick={() => { setShowKey(v => !v); setKeyDraft(apiKey); }}
             title={apiKey ? 'API key configured — click to change' : 'Set OpenRouter API key'}
@@ -313,7 +311,7 @@ Guidelines:
             <Send size={16} />
           </button>
         </div>
-        <p className="text-xs text-slate-600 text-center mt-2">Using {FREE_MODELS.find(m => m.id === model)?.label} via OpenRouter (free tier)</p>
+        <p className="text-xs text-slate-600 text-center mt-2">{model ? `Using ${model} via OpenRouter` : 'Enter a model ID above to get started'}</p>
       </div>
     </div>
   );

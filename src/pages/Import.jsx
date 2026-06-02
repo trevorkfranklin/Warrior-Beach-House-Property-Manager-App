@@ -1,7 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Check, AlertCircle, RefreshCw, Landmark, Camera, Pencil, Trash2, X } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, sampleReservations, TRANSACTION_CATEGORIES } from '../data/sampleData';
+import { useTransactions } from '../hooks/useTransactions';
+import { useReservations } from '../hooks/useReservations';
+import { useAppSetting } from '../hooks/useAppSetting';
+import { supabase } from '../lib/supabase';
+import { TRANSACTION_CATEGORIES } from '../data/sampleData';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function parseLine(line) {
@@ -64,8 +67,8 @@ const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Vision-capable models on OpenRouter
 const VISION_PRESETS = [
+  'deepseek/deepseek-v4-flash',
   'google/gemma-4-31b-it:free',
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   'google/gemma-4-26b-a4b-it:free',
 ];
 
@@ -84,8 +87,12 @@ For each entry return an object with exactly these keys:
 }`;
 
 export default function Import() {
-  const [transactions, setTransactions] = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [reservations, setReservations] = useLocalStorage('wbh_reservations', sampleReservations);
+  const { transactions, bulkAddTransactions, reload: reloadTx } = useTransactions();
+  const { reservations, bulkAddReservations } = useReservations();
+  const [sfAccessUrl, setSfAccessUrl]     = useAppSetting('simplefin_url', '');
+  const [autoSyncDate, setAutoSyncDate]   = useAppSetting('auto_sync_date', '');
+  const [apiKey, setApiKey]               = useAppSetting('openrouter_key', '');
+  const [ssModel, setSsModel]             = useAppSetting('vision_model', 'google/gemma-4-31b-it:free');
   const [mode, setMode] = useState('bank');
 
   // ── CSV state ──────────────────────────────────────────────────────────────
@@ -160,12 +167,12 @@ export default function Import() {
     keys.has(`${tx.date}|${tx.description}|${Number(tx.amount)}|${tx.type}`);
 
   const buildPreview = () => { setPreview(rows.slice(0, 20).map(buildRow)); setStep('preview'); };
-  const doImport = () => {
+  const doImport = async () => {
     const keys = existingKeys();
     const all = rows.map(buildRow);
     const fresh = all.filter(tx => !isDupe(tx, keys));
     setCsvSkipped(all.length - fresh.length);
-    setTransactions(prev => [...prev, ...fresh]);
+    await bulkAddTransactions(fresh);
     setStep('done');
   };
   const resetCsv = () => {
@@ -176,14 +183,17 @@ export default function Import() {
   const csvSteps = ['upload', 'map', 'preview', 'done'];
 
   // ── SimpleFIN state ────────────────────────────────────────────────────────
-  const [sfAccessUrl, setSfAccessUrl] = useLocalStorage('wbh_simplefin_url', '');
-  const [autoSyncDate]                = useLocalStorage('wbh_auto_sync_date', '');
-  const [sfStep, setSfStep] = useState(() => sfAccessUrl ? 'sync' : 'connect');
+  const [sfStep, setSfStep] = useState('connect');
+
+  // When sfAccessUrl loads from Supabase, advance to sync step
+  useEffect(() => {
+    if (sfAccessUrl) setSfStep(s => s === 'connect' ? 'sync' : s);
+  }, [sfAccessUrl]);
   const [sfToken, setSfToken] = useState('');
   const [sfConnecting, setSfConnecting] = useState(false);
   const [sfSyncing, setSfSyncing] = useState(false);
   const [sfError, setSfError] = useState('');
-  const [sfAccounts, setSfAccounts] = useState([]);
+  const [sfFetchedAccounts, setSfFetchedAccounts] = useState([]);
   const [sfPreview, setSfPreview] = useState([]);
   const [sfStartDate, setSfStartDate] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10);
@@ -195,7 +205,8 @@ export default function Import() {
       const claimUrl = atob(sfToken.trim());
       const res = await fetch(claimUrl, { method: 'POST' });
       if (!res.ok) throw new Error(`Claim failed (${res.status})`);
-      setSfAccessUrl((await res.text()).trim());
+      const accessUrl = (await res.text()).trim();
+      await setSfAccessUrl(accessUrl);
       setSfStep('sync');
     } catch (e) {
       setSfError(e.message || 'Could not connect — check your token and try again.');
@@ -217,7 +228,7 @@ export default function Import() {
         (a.org?.name || '').toLowerCase().includes('wells fargo') &&
         !(a.name    || '').toLowerCase().includes('credit')
       );
-      setSfAccounts(accounts);
+      setSfFetchedAccounts(accounts);
       const txs = accounts.flatMap(acct =>
         (acct.transactions || []).map(tx => {
           const amount = parseFloat(tx.amount);
@@ -239,21 +250,19 @@ export default function Import() {
     } finally { setSfSyncing(false); }
   }
 
-  function sfImport() {
+  async function sfImport() {
     const fresh = sfPreview.filter(tx => !tx._dupe).map(({ _dupe, ...tx }) => tx);
-    setTransactions(prev => [...prev, ...fresh]);
+    await bulkAddTransactions(fresh);
     setSfStep('done');
   }
 
   function sfDisconnect() {
     setSfAccessUrl(''); setSfStep('connect');
-    setSfAccounts([]); setSfPreview([]); setSfError(''); setSfToken('');
+    setSfFetchedAccounts([]); setSfPreview([]); setSfError(''); setSfToken('');
   }
 
   // ── Screenshot / Vision state ──────────────────────────────────────────────
-  const [apiKey, setApiKey]       = useLocalStorage('wbh_openrouter_key', '');
   const [keyDraft, setKeyDraft]   = useState('');
-  const [ssModel, setSsModel]     = useLocalStorage('wbh_vision_model', 'google/gemma-4-31b-it:free');
   const [ssImageUrl, setSsImageUrl] = useState('');   // object URL for preview
   const [ssBase64, setSsBase64]   = useState('');     // base64 data URI
   const [ssMime, setSsMime]       = useState('');
@@ -391,15 +400,14 @@ export default function Import() {
 
   function removeDraft(id) { setSsDraft(prev => prev.filter(r => r.id !== id)); }
 
-  function ssImport() {
-    // Deduplicate against existing reservations by checkIn + guestName
+  async function ssImport() {
     const existingKeys = new Set(
       reservations.map(r => `${r.checkIn}|${r.guestName?.toLowerCase()}`)
     );
     const fresh = ssDraft.filter(r =>
       !existingKeys.has(`${r.checkIn}|${r.guestName?.toLowerCase()}`)
     );
-    setReservations(prev => [...prev, ...fresh]);
+    await bulkAddReservations(fresh);
     setSsStep('done');
   }
 
@@ -411,34 +419,42 @@ export default function Import() {
 
   // ── Cleanup state ──────────────────────────────────────────────────────────
   const [cleanupResult, setCleanupResult] = useState(null);
-  const cleanup = () => {
+  const cleanup = async () => {
     const seen = new Set();
-    let removed = 0;
-    const unique = transactions.filter(tx => {
+    const toDelete = [];
+    for (const tx of transactions) {
       const key = `${tx.date}|${tx.description}|${String(tx.amount)}|${tx.type}`;
-      if (seen.has(key)) { removed++; return false; }
-      seen.add(key); return true;
-    }).map(tx => ({ ...tx, id: crypto.randomUUID() }));
-    setTransactions(unique); setCleanupResult(removed);
+      if (seen.has(key)) toDelete.push(tx.id);
+      else seen.add(key);
+    }
+    if (toDelete.length) {
+        await supabase.from('transactions').delete().in('id', toDelete);
+      await reloadTx();
+    }
+    setCleanupResult(toDelete.length);
   };
 
   const [fixCount, setFixCount] = useState(null);
-  const fixDates = () => {
+  const fixDates = async () => {
     let fixed = 0;
-    const updated = transactions.map(tx => {
-      const normalized = normalizeDate(tx.date);
-      if (normalized !== tx.date) { fixed++; return { ...tx, date: normalized }; }
-      return tx;
-    });
-    setTransactions(updated); setFixCount(fixed);
+    const updates = transactions
+      .map(tx => ({ tx, normalized: normalizeDate(tx.date) }))
+      .filter(({ tx, normalized }) => normalized !== tx.date);
+    for (const { tx, normalized } of updates) {
+      await supabase.from('transactions').update({ date: normalized }).eq('id', tx.id);
+      fixed++;
+    }
+    if (fixed) await reloadTx();
+    setFixCount(fixed);
   };
 
   const csvImported = transactions.filter(tx => tx.notes === 'Imported from CSV');
   const [removeCount, setRemoveCount] = useState(null);
-  const removeCsvImports = () => {
+  const removeCsvImports = async () => {
     if (!csvImported.length) { setRemoveCount(0); return; }
     if (!confirm(`Delete all ${csvImported.length} CSV-imported transactions?`)) return;
-    setTransactions(transactions.filter(tx => tx.notes !== 'Imported from CSV'));
+    await supabase.from('transactions').delete().eq('notes', 'Imported from CSV');
+    await reloadTx();
     setRemoveCount(csvImported.length);
   };
 
@@ -519,7 +535,7 @@ export default function Import() {
               <div className="space-y-4">
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm flex items-center gap-2">
                   <AlertCircle size={14} />
-                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfAccounts.length} Wells Fargo account{sfAccounts.length !== 1 ? 's' : ''}.
+                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfFetchedAccounts.length} Wells Fargo account{sfFetchedAccounts.length !== 1 ? 's' : ''}.
                   {sfDupes > 0 && <span className="text-slate-400">{sfDupes} already imported will be skipped.</span>}
                 </div>
                 <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">

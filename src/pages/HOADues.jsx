@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleHOADues, sampleTransactions } from '../data/sampleData';
+import { useHoaDues } from '../hooks/useHoaDues';
+import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../context/Auth';
 
 const EMPTY = { id: '', year: new Date().getFullYear(), annualAmount: '', dueDate: '', notes: '' };
@@ -43,8 +43,8 @@ function Modal({ title, form, setForm, onSave, onClose }) {
 }
 
 export default function HOADues() {
-  const [hoaRecords, setHoaRecords] = useLocalStorage('wbh_hoa_dues', sampleHOADues);
-  const [transactions]              = useLocalStorage('wbh_transactions', sampleTransactions);
+  const { hoaDues: hoaRecords, addHoaDue, updateHoaDue, deleteHoaDue } = useHoaDues();
+  const { transactions } = useTransactions();
   const [modal, setModal]           = useState(null);
   const [form, setForm]             = useState(EMPTY);
   const { canEdit }                 = useAuth();
@@ -115,14 +115,14 @@ export default function HOADues() {
     setForm({ id: e.id, year: e.year, annualAmount: e.annualAmount, dueDate: e.dueDate || '', notes: e.notes || '' });
     setModal('edit');
   };
-  const save = () => {
+  const save = async () => {
     if (!form.year) return;
     const record = { ...form, annualAmount: Number(form.annualAmount) || 0 };
-    if (modal === 'add') setHoaRecords(prev => [...prev, record]);
-    else setHoaRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    if (modal === 'add') await addHoaDue(record);
+    else await updateHoaDue(record);
     setModal(null);
   };
-  const remove = (id) => { if (confirm('Delete this HOA record?')) setHoaRecords(prev => prev.filter(r => r.id !== id)); };
+  const remove = async (id) => { if (confirm('Delete this HOA record?')) await deleteHoaDue(id); };
 
   const statusBadge = (status) => {
     const cls = status === 'Paid'     ? 'bg-emerald-400/10 text-emerald-400'

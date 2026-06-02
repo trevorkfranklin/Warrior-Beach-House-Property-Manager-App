@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown, DollarSign, CalendarDays, ArrowUpRight, Percent } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sampleTransactions, sampleReservations, samplePropertyTaxes } from '../data/sampleData';
+import { useTransactions } from '../hooks/useTransactions';
+import { useReservations } from '../hooks/useReservations';
+import { usePropertyTaxes } from '../hooks/usePropertyTaxes';
+import { useAppSetting } from '../hooks/useAppSetting';
 import { txInMonth, amountForMonth } from '../utils/transactions';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -38,10 +40,10 @@ function reservationStatus(r, today) {
 }
 
 export default function Dashboard() {
-  const [transactions]  = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [reservations]  = useLocalStorage('wbh_reservations', sampleReservations);
-  const [propertyTaxes] = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
-  const [rentcastData]  = useLocalStorage('wbh_rentcast', {});
+  const { transactions }  = useTransactions();
+  const { reservations }  = useReservations();
+  const { propertyTaxes } = usePropertyTaxes();
+  const [rentcastData]    = useAppSetting('rentcast', {});
 
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = new Date().getFullYear();
@@ -57,33 +59,49 @@ export default function Dashboard() {
     return `$${Math.round(n)}`;
   };
 
-  const stats = useMemo(() => {
-    const thisMonthTx = transactions.filter(tx => !tx.excluded && txInMonth(tx, currentMonth));
-    const income          = thisMonthTx.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
-    const expenses        = thisMonthTx.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
-    const cashFlowSupport = thisMonthTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+  const [statsView, setStatsView] = useState('month');
 
-    // Occupancy for current month
+  const stats = useMemo(() => {
+    const yearPrefix = `${currentYear}-`;
+
+    // ── Month ──────────────────────────────────────────────────────────────
+    const monthTx        = transactions.filter(tx => !tx.excluded && txInMonth(tx, currentMonth));
+    const monthIncome    = monthTx.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const monthExpenses  = monthTx.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const monthCFS       = monthTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+
     const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
-    let occupiedNights = 0;
+    let monthOccupiedNights = 0;
     for (const r of reservations) {
       if (r.status === 'Cancelled') continue;
       const cin  = r.checkIn  > currentMonth + '-01' ? r.checkIn  : currentMonth + '-01';
       const cout = r.checkOut < currentMonth + '-' + String(daysInMonth).padStart(2,'0') ? r.checkOut : currentMonth + '-' + String(daysInMonth).padStart(2,'0');
-      if (cin <= cout) {
-        const diff = (new Date(cout) - new Date(cin)) / 86400000;
-        occupiedNights += Math.max(diff, 0);
-      }
+      if (cin <= cout) monthOccupiedNights += Math.max((new Date(cout) - new Date(cin)) / 86400000, 0);
     }
-    const occupancyRate = daysInMonth > 0 ? Math.min(occupiedNights / daysInMonth * 100, 100) : 0;
-
-    // Net ADR — net rent / nights this month from reservations
-    const monthRes = reservations.filter(r => r.status !== 'Cancelled' && r.checkIn?.startsWith(currentMonth));
-    const monthNetRent = monthRes.reduce((s, r) => s + (Number(r.netRent) || 0), 0);
+    const monthRes     = reservations.filter(r => r.status !== 'Cancelled' && !r.isOwnerHold && r.checkIn?.startsWith(currentMonth));
     const monthNights  = monthRes.reduce((s, r) => s + (Number(r.nights) || 0), 0);
-    const adr = monthNights > 0 ? monthNetRent / monthNights : 0;
+    const monthAdr     = monthNights > 0 ? monthRes.reduce((s, r) => s + (Number(r.netRent) || 0), 0) / monthNights : 0;
 
-    // Unpaid taxes
+    // ── YTD ────────────────────────────────────────────────────────────────
+    const ytdTx       = transactions.filter(tx => !tx.excluded && tx.date?.startsWith(yearPrefix));
+    const ytdIncome   = ytdTx.filter(t => t.type === 'Income'  && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const ytdExpenses = ytdTx.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+    const ytdCFS      = ytdTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
+
+    const dayOfYear   = Math.floor((new Date(today) - new Date(`${currentYear}-01-01`)) / 86400000) + 1;
+    let ytdOccupiedNights = 0;
+    const ytdStart = `${currentYear}-01-01`, ytdEnd = today;
+    for (const r of reservations) {
+      if (r.status === 'Cancelled') continue;
+      const cin  = r.checkIn  > ytdStart ? r.checkIn  : ytdStart;
+      const cout = r.checkOut < ytdEnd   ? r.checkOut : ytdEnd;
+      if (cin <= cout) ytdOccupiedNights += Math.max((new Date(cout) - new Date(cin)) / 86400000, 0);
+    }
+    const ytdRes    = reservations.filter(r => r.status !== 'Cancelled' && !r.isOwnerHold && r.checkIn?.startsWith(yearPrefix));
+    const ytdNights = ytdRes.reduce((s, r) => s + (Number(r.nights) || 0), 0);
+    const ytdAdr    = ytdNights > 0 ? ytdRes.reduce((s, r) => s + (Number(r.netRent) || 0), 0) / ytdNights : 0;
+
+    // ── Shared ─────────────────────────────────────────────────────────────
     const taxPaid = new Map();
     transactions.filter(tx => tx.category === 'Property Tax' && tx.taxYear && !tx.excluded)
       .forEach(tx => {
@@ -97,8 +115,14 @@ export default function Dashboard() {
         return s + Math.max(Number(t.annualAmount) - (taxPaid.get(key) || 0), 0);
       }, 0);
 
-    return { income, expenses, netCashflow: income - expenses, cashFlowSupport, occupancyRate, adr, unpaidTaxes, occupiedNights };
+    return {
+      month: { income: monthIncome, expenses: monthExpenses, netCashflow: monthIncome - monthExpenses, cashFlowSupport: monthCFS, occupancyRate: daysInMonth > 0 ? Math.min(monthOccupiedNights / daysInMonth * 100, 100) : 0, adr: monthAdr, occupiedNights: monthOccupiedNights },
+      ytd:   { income: ytdIncome,   expenses: ytdExpenses,   netCashflow: ytdIncome - ytdExpenses,     cashFlowSupport: ytdCFS,   occupancyRate: dayOfYear   > 0 ? Math.min(ytdOccupiedNights   / dayOfYear   * 100, 100) : 0, adr: ytdAdr,   occupiedNights: ytdOccupiedNights },
+      unpaidTaxes,
+    };
   }, [transactions, reservations, propertyTaxes, currentMonth, currentMonthIdx, currentYear, today]);
+
+  const s = stats[statsView];
 
   const monthlyData = useMemo(() => MONTHS.map((label, mi) => {
     const month = `${currentYear}-${String(mi + 1).padStart(2, '0')}`;
@@ -133,32 +157,34 @@ export default function Dashboard() {
     return 'bg-red-400/10 text-red-400';
   };
 
-
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-slate-400 text-sm mt-1">Warrior Beach House · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-slate-400 text-sm mt-1">Warrior Beach House · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+        </div>
+        <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg">
+          <button onClick={() => setStatsView('month')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${statsView === 'month' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Current Month</button>
+          <button onClick={() => setStatsView('ytd')}   className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${statsView === 'ytd'   ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Year to Date</button>
+        </div>
       </div>
 
-      {/* Finance KPIs */}
-      <div className={`grid gap-4 mb-4 ${stats.cashFlowSupport > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-        <StatCard icon={TrendingUp}   label="Monthly Income"   value={fmtFull(stats.income)}      sub="This month"       color="emerald" />
-        <StatCard icon={TrendingDown} label="Monthly Expenses" value={fmtFull(stats.expenses)}    sub="This month"       color="red" />
-        <StatCard icon={DollarSign}   label="Net Cashflow"     value={fmtFull(stats.netCashflow)} sub="This month"       color={stats.netCashflow >= 0 ? 'emerald' : 'red'} />
-        {stats.cashFlowSupport > 0 && (
-          <StatCard icon={DollarSign} label="Cash Flow Support" value={fmtFull(stats.cashFlowSupport)} sub="Owner contributions" color="yellow" />
+      <div className={`grid gap-4 mb-4 ${s.cashFlowSupport > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <StatCard icon={TrendingUp}   label="Income"       value={fmtFull(s.income)}      sub={statsView === 'month' ? 'This month' : `Jan–${new Date().toLocaleDateString('en-US',{month:'short'})}`} color="emerald" />
+        <StatCard icon={TrendingDown} label="Expenses"     value={fmtFull(s.expenses)}    sub={statsView === 'month' ? 'This month' : 'Year to date'} color="red" />
+        <StatCard icon={DollarSign}   label="Net Cashflow" value={fmtFull(s.netCashflow)} sub={statsView === 'month' ? 'This month' : 'Year to date'} color={s.netCashflow >= 0 ? 'emerald' : 'red'} />
+        {s.cashFlowSupport > 0 && (
+          <StatCard icon={DollarSign} label="Cash Flow Support" value={fmtFull(s.cashFlowSupport)} sub="Owner contributions" color="yellow" />
         )}
       </div>
 
-      {/* STR KPIs */}
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <StatCard icon={Percent}     label="Occupancy Rate" value={`${stats.occupancyRate.toFixed(0)}%`} sub={`${Math.round(stats.occupiedNights)} nights booked this month`} color="teal" />
-        <StatCard icon={DollarSign}  label="Avg Daily Rate"  value={stats.adr > 0 ? fmtFull(stats.adr) : '—'} sub="Rental income ÷ occupied nights" color="blue" />
-        <StatCard icon={DollarSign}  label="Unpaid Taxes"    value={fmtFull(stats.unpaidTaxes)} sub="Outstanding" color="yellow" />
+        <StatCard icon={Percent}    label="Occupancy Rate" value={`${s.occupancyRate.toFixed(0)}%`} sub={statsView === 'month' ? `${Math.round(s.occupiedNights)} nights this month` : `${Math.round(s.occupiedNights)} nights YTD`} color="teal" />
+        <StatCard icon={DollarSign} label="Avg Daily Rate" value={s.adr > 0 ? fmtFull(s.adr) : '—'} sub={statsView === 'month' ? 'Net rent ÷ nights this month' : 'Net rent ÷ nights YTD'} color="blue" />
+        <StatCard icon={DollarSign} label="Unpaid Taxes"   value={fmtFull(stats.unpaidTaxes)} sub="Outstanding" color="yellow" />
       </div>
 
-      {/* Income vs Expenses chart */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 p-6 mb-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-white">{currentYear} Income vs Expenses</h2>
@@ -206,7 +232,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Transactions */}
         <div className="bg-navy-800 rounded-xl border border-navy-700">
           <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700">
             <h2 className="font-semibold text-white">Recent Transactions</h2>
@@ -228,7 +253,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Upcoming Reservations */}
         <div className="bg-navy-800 rounded-xl border border-navy-700">
           <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700">
             <h2 className="font-semibold text-white">Upcoming Reservations</h2>

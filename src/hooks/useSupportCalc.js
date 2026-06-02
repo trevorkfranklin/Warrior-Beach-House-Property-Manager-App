@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
-import { useLocalStorage } from './useLocalStorage';
-import { sampleTransactions, samplePropertyTaxes, sampleHOADues, sampleReservations } from '../data/sampleData';
+import { useTransactions } from './useTransactions';
+import { usePropertyTaxes } from './usePropertyTaxes';
+import { useHoaDues } from './useHoaDues';
+import { useReservations } from './useReservations';
+import { useAppSetting } from './useAppSetting';
 import { txInMonth, amountForMonth } from '../utils/transactions';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -10,15 +13,15 @@ const DEFAULT_BUDGETS = { mortgage: 0, cableInternet: 0, electricity: 0, waterTr
 const EXPENSE_KEYS = Object.keys(DEFAULT_BUDGETS);
 
 export function useSupportCalc() {
-  const [transactions]       = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [taxRecords]         = useLocalStorage('wbh_property_taxes', samplePropertyTaxes);
-  const [hoaRecords]         = useLocalStorage('wbh_hoa_dues', sampleHOADues);
-  const [reservations]       = useLocalStorage('wbh_reservations', sampleReservations);
-  const [endBals]            = useLocalStorage('wbh_cashflow_end_bals', {});
-  const [cashflowBudgets]    = useLocalStorage('wbh_cashflow_budgets', DEFAULT_BUDGETS);
-  const [cashflowExtra]      = useLocalStorage('wbh_cashflow_extra', []);
-  const [cashflowMonthly]    = useLocalStorage('wbh_cashflow_monthly', {});
-  const [cashflowMonthItems] = useLocalStorage('wbh_cashflow_month_items', {});
+  const { transactions }         = useTransactions();
+  const { propertyTaxes: taxRecords } = usePropertyTaxes();
+  const { hoaDues: hoaRecords }  = useHoaDues();
+  const { reservations }         = useReservations();
+  const [endBals]                = useAppSetting('cashflow_end_bals', {});
+  const [cashflowBudgets]        = useAppSetting('cashflow_budgets', DEFAULT_BUDGETS);
+  const [cashflowExtra]          = useAppSetting('cashflow_extra', []);
+  const [cashflowMonthly]        = useAppSetting('cashflow_monthly', {});
+  const [cashflowMonthItems]     = useAppSetting('cashflow_month_items', {});
 
   const currentYear     = new Date().getFullYear();
   const currentMonthIdx = new Date().getMonth();
@@ -36,13 +39,21 @@ export function useSupportCalc() {
   const incomeByPayMonth = useMemo(() => {
     const map = {};
     for (const r of reservations) {
-      if (r.status === 'Cancelled' || !r.checkIn) continue;
-      const [yr, mo] = r.checkIn.slice(0, 7).split('-').map(Number);
-      const payYr = mo === 12 ? yr + 1 : yr;
-      const payMo = mo === 12 ? 1 : mo + 1;
-      const pay = `${payYr}-${String(payMo).padStart(2, '0')}`;
-      const protection = r.isOwnerHold ? 0 : Number(r.nights || 0) * PROTECTION_PER_NIGHT;
-      map[pay] = (map[pay] || 0) + Number(r.netRent || 0) - protection;
+      if (r.status === 'Cancelled' || !r.checkIn || !r.checkOut) continue;
+      const totalNights = r.nights || 0;
+      if (totalNights <= 0) continue;
+      const protection  = r.isOwnerHold ? 0 : totalNights * PROTECTION_PER_NIGHT;
+      const netPerNight = (Number(r.netRent || 0) - protection) / totalNights;
+      let d = new Date(r.checkIn + 'T12:00:00');
+      const out = new Date(r.checkOut + 'T12:00:00');
+      while (d < out) {
+        const [yr, mo] = d.toISOString().slice(0, 7).split('-').map(Number);
+        const payMo = mo === 12 ? 1 : mo + 1;
+        const payYr = mo === 12 ? yr + 1 : yr;
+        const pay = `${payYr}-${String(payMo).padStart(2, '0')}`;
+        map[pay] = (map[pay] || 0) + netPerNight;
+        d.setDate(d.getDate() + 1);
+      }
     }
     return map;
   }, [reservations]);
@@ -93,21 +104,27 @@ export function useSupportCalc() {
     const actualExpense = txs.filter(t => t.type === 'Expense' && t.category !== 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0);
     const taxDue = (taxByMonth.get(month) || 0) + (hoaByMonth.get(month) || 0);
 
+    const fixedTotal = EXPENSE_KEYS.reduce((s, key) => s + (cashflowMonthly[month]?.[key] ?? cashflowBudgets[key] ?? 0), 0);
+    const extraTotal = (cashflowExtra || []).reduce((s, e) => s + (cashflowMonthly[month]?.[e.id] ?? Number(e.amount || 0)), 0);
+    const otherTotal = (cashflowMonthItems[month] || []).reduce((s, i) => s + Number(i.amount || 0), 0);
+    const budgetExpense = fixedTotal + extraTotal + otherTotal;
+
     let projExpense;
-    if (isPast || isCurrent) {
+    if (isPast) {
       projExpense = actualExpense;
+    } else if (isCurrent) {
+      projExpense = actualExpense > 0 ? actualExpense : budgetExpense;
     } else {
-      const fixedTotal = EXPENSE_KEYS.reduce((s, key) => s + (cashflowMonthly[month]?.[key] ?? cashflowBudgets[key] ?? 0), 0);
-      const extraTotal = cashflowExtra.reduce((s, e) => s + (cashflowMonthly[month]?.[e.id] ?? Number(e.amount || 0)), 0);
-      const otherTotal = (cashflowMonthItems[month] || []).reduce((s, i) => s + Number(i.amount || 0), 0);
-      projExpense = fixedTotal + extraTotal + otherTotal;
+      projExpense = budgetExpense;
     }
 
     const cashFlowSupport = (isPast || isCurrent)
       ? txs.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + amountForMonth(t, month), 0)
       : 0;
 
-    const income  = isPast || isCurrent ? actualIncome : (incomeByPayMonth[month] || 0);
+    const income  = isPast ? actualIncome
+      : isCurrent ? (actualIncome > 0 ? actualIncome : (incomeByPayMonth[month] || 0))
+      : (incomeByPayMonth[month] || 0);
     const expense = projExpense + (isPast ? 0 : taxDue);
     return { label, month, income, expense, cashFlowSupport, taxDue: isPast ? 0 : taxDue, net: income - expense, projected: !isPast && !isCurrent, isCurrent };
   }), [chartSlots, transactions, incomeByPayMonth, taxByMonth, hoaByMonth, cashflowBudgets, cashflowExtra, cashflowMonthly, cashflowMonthItems]);
@@ -134,7 +151,6 @@ export function useSupportCalc() {
     return items;
   }, [currentEndBal, monthData]);
 
-  // Total actual CFS deposited (all owners) per past/current month
   const cfsActualByMonth = useMemo(() => {
     const map = {};
     for (const slot of chartSlots) {

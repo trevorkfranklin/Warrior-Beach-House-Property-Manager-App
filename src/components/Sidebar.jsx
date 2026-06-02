@@ -15,7 +15,7 @@ const navItems = [
   { to: '/owners',            label: 'Owners',           icon: Users },
   { to: '/property-taxes',    label: 'Property Taxes',   icon: DollarSign },
   { to: '/hoa-dues',          label: 'HOA Dues',         icon: Home },
-  { to: '/projected-cashflow',label: 'Projected Cashflow',icon: TrendingUp },
+  { to: '/projected-cashflow',label: 'Cashflow Summary',  icon: TrendingUp },
   { to: '/cashflow-details',  label: 'Cashflow Details',  icon: TableProperties },
   { to: '/chat',              label: 'AI Assistant',     icon: MessageSquare },
   { to: '/notifications',     label: 'Notifications',    icon: Bell },
@@ -23,7 +23,7 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const { session, logout, isAdmin } = useAuth();
+  const { session, profile, logout, isAdmin } = useAuth();
   const pendingCount = useNotificationCount();
 
   return (
@@ -35,8 +35,8 @@ export default function Sidebar() {
       {session && (
         <div className="px-3 pb-2 border-b border-navy-700 pt-3 flex items-center justify-between">
           <div className="min-w-0">
-            <div className="text-xs text-white font-medium truncate">{session.username}</div>
-            <div className="text-xs text-slate-500">{session.role === 'admin' ? 'Admin' : 'Viewer'}</div>
+            <div className="text-xs text-white font-medium truncate">{session?.user?.email}</div>
+            <div className="text-xs text-slate-500">{profile?.role === 'admin' ? 'Admin' : 'Viewer'}</div>
           </div>
           <button onClick={logout} title="Sign out" className="text-slate-500 hover:text-red-400 flex-shrink-0 ml-2">
             <LogOut size={15} />

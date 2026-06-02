@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, Check, User, Home, DollarSign, TrendingUp, ChevronDown, ChevronUp, Wallet } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useOwners } from '../hooks/useOwners';
+import { useTransactions } from '../hooks/useTransactions';
+import { useReservations } from '../hooks/useReservations';
+import { useAppSetting } from '../hooks/useAppSetting';
 import { useSupportCalc } from '../hooks/useSupportCalc';
-import { sampleOwners, sampleTransactions, sampleReservations } from '../data/sampleData';
 import { useAuth } from '../context/Auth';
 
 const OWNER_CLEANING_FEE = 122;
@@ -52,11 +54,11 @@ function Modal({ title, form, setForm, onSave, onClose }) {
 }
 
 export default function Owners() {
-  const [owners, setOwners]             = useLocalStorage('wbh_owners', sampleOwners);
-  const [transactions]                  = useLocalStorage('wbh_transactions', sampleTransactions);
-  const [reservations]                  = useLocalStorage('wbh_reservations', sampleReservations);
-  const [ownerReserveStarts, setOwnerReserveStarts] = useLocalStorage('wbh_owner_reserve_starts', {});
-  const { canEdit }                     = useAuth();
+  const { owners, addOwner, updateOwner, deleteOwner } = useOwners();
+  const { transactions }   = useTransactions();
+  const { reservations }   = useReservations();
+  const [ownerReserveStarts, setOwnerReserveStarts] = useAppSetting('owner_reserve_starts', {});
+  const { canEdit }        = useAuth();
   const [modal, setModal]               = useState(null);
   const [form, setForm]                 = useState(EMPTY);
   const [expanded, setExpanded]         = useState({});
@@ -134,15 +136,15 @@ export default function Owners() {
 
   const openAdd  = () => { setForm({ ...EMPTY, id: crypto.randomUUID() }); setModal('add'); };
   const openEdit = (o) => { setForm({ ...o }); setModal('edit'); };
-  const save = () => {
+  const save = async () => {
     if (!form.name) return;
     const record = { ...form, ownershipPercent: Number(form.ownershipPercent) || 0 };
-    if (modal === 'add') setOwners(prev => [...prev, record]);
-    else setOwners(prev => prev.map(o => o.id === record.id ? record : o));
+    if (modal === 'add') await addOwner(record);
+    else await updateOwner(record);
     setModal(null);
   };
-  const remove = (id) => {
-    if (confirm('Delete this owner?')) setOwners(prev => prev.filter(o => o.id !== id));
+  const remove = async (id) => {
+    if (confirm('Delete this owner?')) await deleteOwner(id);
   };
 
   return (

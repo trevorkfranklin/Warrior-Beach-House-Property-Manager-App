@@ -87,7 +87,7 @@ Respond ONLY with valid JSON — no markdown, no explanation:
       'X-Title': 'Warrior Beach House Property Manager',
     },
     body: JSON.stringify({
-      model: 'anthropic/claude-3-5-haiku-20241022',
+      model: 'deepseek/deepseek-v4-flash',
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: `Categorize these ${uncategorized.length} transactions:\n${uncatLines}` },

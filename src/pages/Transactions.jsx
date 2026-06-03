@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, Check, Ban, Download, Sparkles } from 'lucide-react';
 
-const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
 import { useTransactions } from '../hooks/useTransactions';
 import { useOwners } from '../hooks/useOwners';
 import { useAppSetting } from '../hooks/useAppSetting';
@@ -96,8 +95,6 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
 export default function Transactions() {
   const { transactions, addTransaction, updateTransaction, deleteTransaction, updateTransactionCategory, toggleExclude, bulkUpdateCategories } = useTransactions();
   const { owners }       = useOwners();
-  const [apiKey]         = useAppSetting('openrouter_key', '');
-  const [aiModel]        = useAppSetting('vision_model', 'deepseek/deepseek-v4-flash');
   const [modal, setModal]   = useState(null);
   const [form, setForm]     = useState(EMPTY);
   const { canEdit }         = useAuth();
@@ -152,61 +149,45 @@ export default function Transactions() {
   const [aiError, setAiError]           = useState('');
 
   const suggestWithAI = async () => {
-    if (!apiKey) { setAiError('OpenRouter API key not set — add it in Import → Screenshot first.'); return; }
-
     const uncategorized = transactions.filter(t => isUncategorized(t) && !t.excluded);
     if (!uncategorized.length) { setAiError('No uncategorized transactions found.'); return; }
 
     setAiSuggesting(true); setAiError('');
     try {
+      const examples = transactions
+        .filter(t => !isUncategorized(t) && !t.excluded && t.category)
+        .slice(0, 50)
+        .map(t => ({ id: t.id, date: t.date, type: t.type, amount: t.amount, description: t.description, category: t.category, ownerId: t.ownerId || null, taxYear: t.taxYear || null, taxType: t.taxType || null }));
+
       const CHUNK = 50;
       const allSuggestions = [];
+
       for (let i = 0; i < uncategorized.length; i += CHUNK) {
         const chunk = uncategorized.slice(i, i + CHUNK);
-        const prompt = `You are categorizing bank transactions for a vacation rental property.
-Assign each transaction exactly one category from this list:
-${TRANSACTION_CATEGORIES.join(', ')}
-
-Rules:
-- Use "Rental Income" for vacation rental payouts (Vacasa, Airbnb, VRBO, etc.)
-- Use "Mortgage" for mortgage payments
-- Use "Management Fees" for property management fees
-- Use "Repairs & Maintenance" for repairs, contractors, hardware stores
-- Use "Utilities" for electric, water, gas, trash
-- Use "Insurance" for insurance payments
-- Use "HOA Fees" for HOA payments
-- Use "Cash Flow Support" for cash transfers or contributions from an owner
-- Use "Other Income" or "Other Expense" if nothing else fits
-- Use null only if truly unclassifiable
-
-Return ONLY a JSON array, no explanation:
-[{"id":"...","category":"..."}]
-
-Transactions:
-${chunk.map(t => `{"id":"${t.id}","description":"${t.description}","amount":${t.amount},"type":"${t.type}"}`).join('\n')}`;
-
-        const res = await fetch(OR_URL, {
+        const res = await fetch('/api/ai-categorize', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://warrior-beach-house.local',
-            'X-Title': 'Warrior Beach House',
-          },
-          body: JSON.stringify({ model: aiModel, max_tokens: 4096, messages: [{ role: 'user', content: prompt }] }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uncategorized: chunk, examples, owners }),
         });
-        if (!res.ok) throw new Error(`API error ${res.status}`);
-        const data = await res.json();
-        const raw  = data.choices?.[0]?.message?.content || '';
-        const match = raw.match(/\[[\s\S]*\]/);
-        if (match) allSuggestions.push(...JSON.parse(match[0]));
+        if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+        const { suggestions } = await res.json();
+        if (suggestions?.length) allSuggestions.push(...suggestions);
       }
 
-      const validSuggestions = allSuggestions.filter(s => s.category && TRANSACTION_CATEGORIES.includes(s.category));
-      const { count } = await bulkUpdateCategories(validSuggestions);
+      const valid = allSuggestions.filter(s => s.category && TRANSACTION_CATEGORIES.includes(s.category));
+      const { count } = await bulkUpdateCategories(valid);
+
+      // Apply extra fields (ownerId, taxYear, taxType) from high-confidence suggestions
+      for (const s of valid) {
+        if (s.ownerId || s.taxYear || s.taxType) {
+          const tx = transactions.find(t => t.id === s.id);
+          if (tx) await updateTransaction({ ...tx, category: s.category, categorized: true, ownerId: s.ownerId || tx.ownerId, taxYear: s.taxYear || tx.taxYear, taxType: s.taxType || tx.taxType });
+        }
+      }
+
       setAiError(`✓ Categorized ${count} of ${uncategorized.length} transactions.`);
     } catch (e) {
-      setAiError('AI suggestion failed: ' + e.message);
+      setAiError('AI categorization failed: ' + e.message);
     } finally {
       setAiSuggesting(false);
     }

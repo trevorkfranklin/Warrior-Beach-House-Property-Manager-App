@@ -106,6 +106,13 @@ export default function Transactions() {
   const [filterCategorized, setFilterCategorized] = useState('all');
   const [showExcluded, setShowExcluded]     = useState(false);
 
+  const [tooltip, setTooltip] = useState(null); // { tx, x, y }
+  const showTooltip = (tx, e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTooltip({ tx, x: r.right + 8, y: r.top });
+  };
+  const hideTooltip = () => setTooltip(null);
+
   const filtered = useMemo(() =>
     [...transactions]
       .filter(tx => filterType === 'All' || tx.type === filterType)
@@ -221,8 +228,51 @@ export default function Transactions() {
     URL.revokeObjectURL(url);
   };
 
+  const fmtFull = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="p-8">
+      {/* Hover tooltip */}
+      {tooltip && (() => {
+        const { tx, x, y } = tooltip;
+        const owner = owners.find(o => o.id === tx.ownerId);
+        const aiS   = aiSuggestions[tx.id];
+        // Clamp so tooltip doesn't go off screen bottom
+        const top   = Math.min(y, window.innerHeight - 300);
+        return (
+          <div
+            className="fixed z-50 w-72 bg-navy-900 border border-navy-600 rounded-xl shadow-2xl p-4 text-xs pointer-events-none"
+            style={{ left: x, top }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-white font-semibold text-sm truncate pr-2">{tx.description}</span>
+              <span className={`flex-shrink-0 px-2 py-0.5 rounded-full font-medium ${tx.type === 'Income' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>{tx.type}</span>
+            </div>
+            <div className="space-y-1.5 text-slate-400">
+              <div className="flex justify-between"><span>Date</span><span className="text-slate-200">{tx.date}</span></div>
+              <div className="flex justify-between"><span>Amount</span><span className={`font-semibold ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>{tx.type === 'Income' ? '+' : '-'}{fmtFull(tx.amount)}</span></div>
+              <div className="flex justify-between gap-2"><span>Category</span><span className="text-slate-200 text-right">{tx.category || <span className="text-yellow-400 italic">Uncategorized</span>}</span></div>
+              {tx.category === 'Property Tax' && tx.taxYear && (
+                <div className="flex justify-between"><span>Tax</span><span className="text-slate-200">{tx.taxYear}{tx.taxType ? ` — ${tx.taxType}` : ''}</span></div>
+              )}
+              {owner && <div className="flex justify-between"><span>Owner</span><span className="text-slate-200">{owner.name}</span></div>}
+              {tx.notes && <div className="flex justify-between gap-2"><span>Notes</span><span className="text-slate-300 text-right">{tx.notes}</span></div>}
+              {tx.sfTxId && <div className="flex justify-between"><span>Source</span><span className="text-slate-500">SimpleFIN</span></div>}
+              {tx.excluded && <div className="mt-1 text-orange-400 italic">Excluded from totals</div>}
+              {aiS && (
+                <div className="mt-2 pt-2 border-t border-navy-700">
+                  <div className="text-purple-400 font-medium mb-1 flex items-center gap-1"><Sparkles size={10} /> AI Suggestion</div>
+                  <div className="flex justify-between"><span>Category</span><span className={`${aiS.confidence === 'high' ? 'text-emerald-400' : 'text-amber-400'}`}>{aiS.category}</span></div>
+                  {aiS.confidence && <div className="flex justify-between"><span>Confidence</span><span className="text-slate-300">{aiS.confidence}</span></div>}
+                  {aiS.taxYear && <div className="flex justify-between"><span>Tax year</span><span className="text-slate-300">{aiS.taxYear}{aiS.taxType ? ` — ${aiS.taxType}` : ''}</span></div>}
+                  {aiS.ownerId && <div className="flex justify-between"><span>Owner</span><span className="text-slate-300">{owners.find(o => o.id === aiS.ownerId)?.name}</span></div>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {modal && (
         <Modal
           title={modal === 'add' ? 'Add Transaction' : 'Edit Transaction'}
@@ -318,7 +368,11 @@ export default function Transactions() {
               const confColor = aiHit?.confidence === 'high' ? 'text-emerald-400' : aiHit?.confidence === 'low' ? 'text-slate-400' : 'text-amber-400';
 
               return (
-                <tr key={tx.id} className={`transition-colors ${tx.excluded ? 'opacity-40' : ''} ${!tx.excluded && uncategorized ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'hover:bg-navy-700/40'}`}>
+                <tr key={tx.id}
+                  className={`transition-colors cursor-default ${tx.excluded ? 'opacity-40' : ''} ${!tx.excluded && uncategorized ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'hover:bg-navy-700/40'}`}
+                  onMouseEnter={e => showTooltip(tx, e)}
+                  onMouseLeave={hideTooltip}
+                >
                   <td className="px-5 py-3 text-slate-300">{tx.date}</td>
                   <td className="px-5 py-3 text-white">
                     {tx.description}{tx.excluded && <span className="ml-2 text-xs text-slate-500 italic">excluded</span>}

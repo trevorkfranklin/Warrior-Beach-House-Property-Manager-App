@@ -59,7 +59,10 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: 'Invalid email or password' };
+    if (error) {
+      console.error('[login] Supabase error:', error);
+      return { error: error.message };
+    }
     return { success: true };
   }, []);
 

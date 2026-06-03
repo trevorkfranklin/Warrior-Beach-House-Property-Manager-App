@@ -107,11 +107,9 @@ export default function Transactions() {
   const [showExcluded, setShowExcluded]     = useState(false);
 
   const [tooltip, setTooltip] = useState(null); // { tx, x, y }
-  const showTooltip = (tx, e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    setTooltip({ tx, x: r.right + 8, y: r.top });
-  };
-  const hideTooltip = () => setTooltip(null);
+  const showTooltip  = (tx, e) => setTooltip({ tx, x: e.clientX + 16, y: e.clientY + 12 });
+  const moveTooltip  = (e)     => setTooltip(prev => prev ? { ...prev, x: e.clientX + 16, y: e.clientY + 12 } : prev);
+  const hideTooltip  = ()      => setTooltip(null);
 
   const filtered = useMemo(() =>
     [...transactions]
@@ -237,12 +235,13 @@ export default function Transactions() {
         const { tx, x, y } = tooltip;
         const owner = owners.find(o => o.id === tx.ownerId);
         const aiS   = aiSuggestions[tx.id];
-        // Clamp so tooltip doesn't go off screen bottom
-        const top   = Math.min(y, window.innerHeight - 300);
+        // Clamp so tooltip stays on screen
+        const top   = Math.min(y, window.innerHeight - 320);
+        const left  = x + 288 > window.innerWidth ? x - 304 : x;
         return (
           <div
             className="fixed z-50 w-72 bg-navy-900 border border-navy-600 rounded-xl shadow-2xl p-4 text-xs pointer-events-none"
-            style={{ left: x, top }}
+            style={{ left, top }}
           >
             <div className="flex items-center justify-between mb-3">
               <span className="text-white font-semibold text-sm truncate pr-2">{tx.description}</span>
@@ -371,6 +370,7 @@ export default function Transactions() {
                 <tr key={tx.id}
                   className={`transition-colors cursor-default ${tx.excluded ? 'opacity-40' : ''} ${!tx.excluded && uncategorized ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'hover:bg-navy-700/40'}`}
                   onMouseEnter={e => showTooltip(tx, e)}
+                  onMouseMove={moveTooltip}
                   onMouseLeave={hideTooltip}
                 >
                   <td className="px-5 py-3 text-slate-300">{tx.date}</td>

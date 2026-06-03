@@ -97,7 +97,7 @@ export default function CashflowDetails() {
   const fmt         = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtDec      = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const endBalColor = (v) => v < MIN_BALANCE ? 'text-red-400' : v > MIN_BALANCE ? 'text-emerald-400' : 'text-slate-400';
-  const reserveColor = (v) => v == null ? 'text-slate-600' : v < RESERVE_TARGET ? 'text-red-400' : v > RESERVE_TARGET ? 'text-emerald-400' : 'text-slate-400';
+  const reserveColor = (v, target = RESERVE_TARGET) => v == null ? 'text-slate-600' : v < target ? 'text-red-400' : v > target ? 'text-emerald-400' : 'text-slate-400';
 
   // ── Does every owner have a May 2026 reserve set? ───────────────────────
   const allOwnersHaveReserves = owners.length > 0 && owners.every(o => ownerReserveStarts[o.id] != null);
@@ -857,7 +857,7 @@ export default function CashflowDetails() {
                             <td key="reserve-collapsed" className="px-4 py-3 text-right">
                               {totalBal == null
                                 ? <span className="text-slate-600">—</span>
-                                : <span className={`font-semibold ${reserveColor(totalBal / owners.length)}`}>{fmtDec(totalBal)}</span>
+                                : <span className={`font-semibold ${reserveColor(totalBal, RESERVE_TARGET * owners.length)}`}>{fmtDec(totalBal)}</span>
                               }
                             </td>
                           );

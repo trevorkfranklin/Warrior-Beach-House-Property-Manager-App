@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, X, Check, Ban, Download, Sparkles } from 'lucide-react';
 
 import { useTransactions } from '../hooks/useTransactions';
@@ -145,52 +145,67 @@ export default function Transactions() {
     if (confirm('Delete this transaction?')) await deleteTransaction(id);
   };
 
-  const [aiSuggesting, setAiSuggesting] = useState(false);
-  const [aiError, setAiError]           = useState('');
+  // AI suggestions: { [txId]: { category, ownerId, taxYear, taxType, confidence } }
+  const [aiSuggestions, setAiSuggestions] = useState({});
+  const [aiLoading, setAiLoading]         = useState(false);
+  const [aiStatus, setAiStatus]           = useState('');
+  const suggestedRef = useRef(new Set());
 
-  const suggestWithAI = async () => {
-    const uncategorized = transactions.filter(t => isUncategorized(t) && !t.excluded);
-    if (!uncategorized.length) { setAiError('No uncategorized transactions found.'); return; }
-
-    setAiSuggesting(true); setAiError('');
+  const fetchSuggestions = async (toSuggest) => {
+    if (!toSuggest.length || aiLoading) return;
+    setAiLoading(true);
+    setAiStatus(`AI analyzing ${toSuggest.length} transaction${toSuggest.length > 1 ? 's' : ''}…`);
     try {
       const examples = transactions
         .filter(t => !isUncategorized(t) && !t.excluded && t.category)
+        .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 50)
         .map(t => ({ id: t.id, date: t.date, type: t.type, amount: t.amount, description: t.description, category: t.category, ownerId: t.ownerId || null, taxYear: t.taxYear || null, taxType: t.taxType || null }));
 
       const CHUNK = 50;
-      const allSuggestions = [];
-
-      for (let i = 0; i < uncategorized.length; i += CHUNK) {
-        const chunk = uncategorized.slice(i, i + CHUNK);
+      const collected = {};
+      for (let i = 0; i < toSuggest.length; i += CHUNK) {
+        const chunk = toSuggest.slice(i, i + CHUNK);
         const res = await fetch('/api/ai-categorize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ uncategorized: chunk, examples, owners }),
         });
-        if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+        if (!res.ok) break;
         const { suggestions } = await res.json();
-        if (suggestions?.length) allSuggestions.push(...suggestions);
-      }
-
-      const valid = allSuggestions.filter(s => s.category && TRANSACTION_CATEGORIES.includes(s.category));
-      const { count } = await bulkUpdateCategories(valid);
-
-      // Apply extra fields (ownerId, taxYear, taxType) from high-confidence suggestions
-      for (const s of valid) {
-        if (s.ownerId || s.taxYear || s.taxType) {
-          const tx = transactions.find(t => t.id === s.id);
-          if (tx) await updateTransaction({ ...tx, category: s.category, categorized: true, ownerId: s.ownerId || tx.ownerId, taxYear: s.taxYear || tx.taxYear, taxType: s.taxType || tx.taxType });
+        for (const s of suggestions || []) {
+          if (s.category && TRANSACTION_CATEGORIES.includes(s.category)) {
+            collected[s.id] = s;
+          }
         }
       }
+      setAiSuggestions(prev => ({ ...prev, ...collected }));
+    } catch {}
+    setAiLoading(false);
+    setAiStatus('');
+  };
 
-      setAiError(`✓ Categorized ${count} of ${uncategorized.length} transactions.`);
-    } catch (e) {
-      setAiError('AI categorization failed: ' + e.message);
-    } finally {
-      setAiSuggesting(false);
-    }
+  // Auto-run when new uncategorized transactions appear
+  useEffect(() => {
+    if (!transactions.length) return;
+    const toSuggest = transactions.filter(t =>
+      isUncategorized(t) && !t.excluded && !suggestedRef.current.has(t.id)
+    );
+    if (!toSuggest.length) return;
+    toSuggest.forEach(t => suggestedRef.current.add(t.id));
+    fetchSuggestions(toSuggest);
+  }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const acceptSuggestion = async (tx, s) => {
+    await updateTransaction({
+      ...tx,
+      category:    s.category,
+      categorized: true,
+      ownerId:     s.ownerId  || tx.ownerId  || '',
+      taxYear:     s.taxYear  ?? tx.taxYear  ?? null,
+      taxType:     s.taxType  || tx.taxType  || '',
+    });
+    setAiSuggestions(prev => { const n = { ...prev }; delete n[tx.id]; return n; });
   };
 
   const exportCSV = () => {
@@ -218,18 +233,16 @@ export default function Transactions() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Transactions</h1>
-          <p className="text-slate-400 text-sm mt-1">Track all income and expenses</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {aiStatus
+              ? <span className="flex items-center gap-1.5"><Sparkles size={12} className="animate-pulse text-purple-400" /><span className="text-purple-400">{aiStatus}</span></span>
+              : 'Track all income and expenses'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportCSV} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium">
             <Download size={14} /> Export CSV
           </button>
-          {canEdit && (
-            <button onClick={suggestWithAI} disabled={aiSuggesting} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              <Sparkles size={14} className={aiSuggesting ? 'animate-pulse' : ''} />
-              {aiSuggesting ? 'Suggesting…' : 'AI Suggest'}
-            </button>
-          )}
           {canEdit && (
             <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
               <Plus size={16} /> Add Transaction
@@ -237,12 +250,6 @@ export default function Transactions() {
           )}
         </div>
       </div>
-
-      {aiError && (
-        <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${aiError.startsWith('✓') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
-          {aiError}
-        </div>
-      )}
 
       <div className="flex flex-wrap gap-4 mb-5">
         <label className="flex flex-col gap-1">
@@ -304,9 +311,14 @@ export default function Transactions() {
           </thead>
           <tbody className="divide-y divide-navy-700">
             {filtered.map(tx => {
-              const hit = isUncategorized(tx) ? suggest(tx.description, patternMap) : null;
+              const uncategorized = isUncategorized(tx);
+              const aiHit  = uncategorized ? aiSuggestions[tx.id] : null;
+              const patHit = uncategorized && !aiHit ? suggest(tx.description, patternMap) : null;
+              const hasSuggestion = !!(aiHit || patHit);
+              const confColor = aiHit?.confidence === 'high' ? 'text-emerald-400' : aiHit?.confidence === 'low' ? 'text-slate-400' : 'text-amber-400';
+
               return (
-                <tr key={tx.id} className={`transition-colors ${tx.excluded ? 'opacity-40' : ''} ${!tx.excluded && isUncategorized(tx) ? 'bg-yellow-500/15 hover:bg-yellow-500/25' : 'hover:bg-navy-700/40'}`}>
+                <tr key={tx.id} className={`transition-colors ${tx.excluded ? 'opacity-40' : ''} ${!tx.excluded && uncategorized ? 'bg-yellow-500/10 hover:bg-yellow-500/20' : 'hover:bg-navy-700/40'}`}>
                   <td className="px-5 py-3 text-slate-300">{tx.date}</td>
                   <td className="px-5 py-3 text-white">
                     {tx.description}{tx.excluded && <span className="ml-2 text-xs text-slate-500 italic">excluded</span>}
@@ -318,16 +330,27 @@ export default function Transactions() {
                     )}
                   </td>
                   <td className="px-5 py-3">
-                    {hit
-                      ? <span className="text-amber-400 italic text-xs" title="Suggested — click ✓ to confirm">{hit.category}</span>
-                      : <span className="text-slate-400">{tx.category || '—'}</span>}
+                    {aiHit ? (
+                      <div>
+                        <span className={`text-xs font-medium ${confColor}`} title={`AI suggestion — ${aiHit.confidence} confidence`}>
+                          {aiHit.category}
+                        </span>
+                        {aiHit.taxYear && <div className="text-xs text-slate-500 mt-0.5">Tax year {aiHit.taxYear}{aiHit.taxType ? ` — ${aiHit.taxType}` : ''}</div>}
+                        {aiHit.ownerId && <div className="text-xs text-slate-500 mt-0.5">{owners.find(o => o.id === aiHit.ownerId)?.name}</div>}
+                      </div>
+                    ) : patHit ? (
+                      <span className="text-amber-400 italic text-xs" title="Pattern suggestion — click ✓ to confirm">{patHit.category}</span>
+                    ) : (
+                      <span className="text-slate-400">{tx.category || '—'}</span>
+                    )}
                   </td>
                   <td className={`px-5 py-3 text-right font-semibold ${tx.excluded ? 'line-through text-slate-500' : tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>
                     {tx.type === 'Income' ? '+' : '-'}{fmtAmt(tx.amount)}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      {canEdit && hit && <button onClick={() => updateTransactionCategory(tx.id, hit.category)} title="Confirm suggestion" className="text-amber-400 hover:text-emerald-400"><Check size={13} /></button>}
+                      {canEdit && aiHit  && <button onClick={() => acceptSuggestion(tx, aiHit)}  title="Accept AI suggestion"      className={`${confColor} hover:text-emerald-400`}><Check size={13} /></button>}
+                      {canEdit && patHit && <button onClick={() => updateTransactionCategory(tx.id, patHit.category)} title="Accept pattern suggestion" className="text-amber-400 hover:text-emerald-400"><Check size={13} /></button>}
                       {canEdit && <button onClick={() => toggleExclude(tx.id)} title={tx.excluded ? 'Re-include' : 'Exclude'} className={`${tx.excluded ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-orange-400'}`}><Ban size={14} /></button>}
                       {canEdit && <button onClick={() => openEdit(tx)} className="text-slate-400 hover:text-white"><Pencil size={14} /></button>}
                       {canEdit && <button onClick={() => remove(tx.id)} className="text-slate-400 hover:text-red-400"><Trash2 size={14} /></button>}

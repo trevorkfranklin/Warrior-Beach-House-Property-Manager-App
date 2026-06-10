@@ -224,10 +224,11 @@ export default function Import() {
       if (!res.ok) throw new Error(`API error (${res.status})`);
       const data = await res.json();
       const allAccounts = data.accounts || [];
-      const accounts = allAccounts.filter(a =>
-        (a.org?.name || '').toLowerCase().includes('wells fargo') &&
-        !(a.name    || '').toLowerCase().includes('credit')
-      );
+      const EXCLUDED_ACCOUNT_SUFFIXES = ['6663', '5100', '9533'];
+      const accounts = allAccounts.filter(a => {
+        const accountStr = `${a.id || ''} ${a.name || ''}`;
+        return !EXCLUDED_ACCOUNT_SUFFIXES.some(suffix => accountStr.includes(suffix));
+      });
       setSfFetchedAccounts(accounts);
       const txs = accounts.flatMap(acct =>
         (acct.transactions || []).map(tx => {
@@ -487,14 +488,14 @@ export default function Import() {
           {sfStep === 'connect' && (
             <div className="space-y-5">
               <div className="p-5 bg-navy-800 border border-navy-700 rounded-xl space-y-3">
-                <h2 className="text-white font-semibold flex items-center gap-2"><Landmark size={16} className="text-emerald-400" /> Connect Wells Fargo via SimpleFIN</h2>
+                <h2 className="text-white font-semibold flex items-center gap-2"><Landmark size={16} className="text-emerald-400" /> Connect Chase via SimpleFIN</h2>
                 <ol className="text-slate-400 text-sm space-y-1.5 list-decimal list-inside">
                   <li>Go to <span className="text-emerald-400 font-mono text-xs">beta-bridge.simplefin.org</span> and create a free account</li>
-                  <li>Click <strong className="text-white">Connect Account</strong> and link your Wells Fargo accounts</li>
+                  <li>Click <strong className="text-white">Connect Account</strong> and link your Chase accounts</li>
                   <li>Click <strong className="text-white">+ Add Application Token</strong> and copy the token</li>
                   <li>Paste it below and click Connect</li>
                 </ol>
-                <p className="text-xs text-slate-500">Only Wells Fargo checking and credit card transactions will be imported.</p>
+                <p className="text-xs text-slate-500">Chase accounts ending in 6663, 5100, and 9533 are excluded from sync.</p>
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">SimpleFIN Setup Token</label>
@@ -511,7 +512,7 @@ export default function Import() {
             <div className="space-y-5">
               <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
                 <div>
-                  <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium"><Check size={15} /> Wells Fargo checking connected · auto-syncs nightly at midnight</div>
+                  <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium"><Check size={15} /> Chase connected · auto-syncs nightly at midnight</div>
                   {autoSyncDate && <div className="text-xs text-slate-500 mt-0.5">Last auto-sync: {autoSyncDate}</div>}
                 </div>
                 <button onClick={sfDisconnect} className="text-xs text-slate-500 hover:text-red-400 transition-colors ml-4">Disconnect</button>
@@ -535,7 +536,7 @@ export default function Import() {
               <div className="space-y-4">
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm flex items-center gap-2">
                   <AlertCircle size={14} />
-                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfFetchedAccounts.length} Wells Fargo account{sfFetchedAccounts.length !== 1 ? 's' : ''}.
+                  {sfFresh.length} new transaction{sfFresh.length !== 1 ? 's' : ''} from {sfFetchedAccounts.length} Chase account{sfFetchedAccounts.length !== 1 ? 's' : ''}.
                   {sfDupes > 0 && <span className="text-slate-400">{sfDupes} already imported will be skipped.</span>}
                 </div>
                 <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">

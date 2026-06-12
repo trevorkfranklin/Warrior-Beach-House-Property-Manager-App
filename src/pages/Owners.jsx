@@ -15,13 +15,13 @@ function Modal({ title, form, setForm, onSave, onClose }) {
   const inputCls = 'w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500';
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-navy-700">
           <h2 className="font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
-        <div className="px-6 py-4 grid grid-cols-2 gap-4">
-          <div className="col-span-2">
+        <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400 block mb-1">Name *</label>
             <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Full name" className={inputCls} />
           </div>
@@ -37,7 +37,7 @@ function Modal({ title, form, setForm, onSave, onClose }) {
             <label className="text-xs text-slate-400 block mb-1">Ownership %</label>
             <input type="number" min="0" max="100" step="0.1" value={form.ownershipPercent} onChange={e => setForm({ ...form, ownershipPercent: e.target.value })} className={inputCls} />
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400 block mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={`${inputCls} resize-none`} />
           </div>
@@ -148,7 +148,7 @@ export default function Owners() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {modal && (
         <Modal
           title={modal === 'add' ? 'Add Owner' : 'Edit Owner'}
@@ -156,13 +156,13 @@ export default function Owners() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Owners</h1>
           <p className="text-slate-400 text-sm mt-1">Owner holds, cash flow support, and reserve balances</p>
         </div>
         {canEdit && (
-          <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+          <button onClick={openAdd} className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
             <Plus size={16} /> Add Owner
           </button>
         )}
@@ -195,7 +195,7 @@ export default function Owners() {
               </div>
 
               {/* Holds & CFS stats */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <div className="bg-navy-900 rounded-lg p-3">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1"><Home size={11} /> Owner Holds</div>
                   <div className="text-white font-semibold">{o.holdCount} stays</div>
@@ -238,7 +238,7 @@ export default function Owners() {
 
                 {/* May balance input */}
                 {editingReserve[o.id] && canEdit && (
-                  <div className="flex items-center gap-2 mb-3 bg-navy-900 rounded-lg px-3 py-2.5 border border-navy-600">
+                  <div className="flex flex-wrap items-center gap-2 mb-3 bg-navy-900 rounded-lg px-3 py-2.5 border border-navy-600">
                     <span className="text-xs text-slate-400 flex-shrink-0">May 2026 actual balance:</span>
                     <span className="text-slate-500 text-xs">$</span>
                     <input
@@ -268,7 +268,7 @@ export default function Owners() {
                 ) : (
                   <>
                     {/* Balance tiles */}
-                    <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
                       <div className="bg-navy-900 rounded-lg p-2.5">
                         <div className="text-xs text-slate-500 mb-1">May Balance</div>
                         <div className={`font-semibold text-sm ${o.currentReserve >= RESERVE_TARGET ? 'text-emerald-400' : o.currentReserve >= RESERVE_TARGET / 2 ? 'text-yellow-400' : 'text-red-400'}`}>
@@ -302,7 +302,7 @@ export default function Owners() {
                         </button>
 
                         {expanded[o.id] && (
-                          <div className="mt-3 rounded-lg overflow-hidden border border-navy-700">
+                          <div className="mt-3 rounded-lg overflow-hidden border border-navy-700 overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-navy-900 text-slate-500">

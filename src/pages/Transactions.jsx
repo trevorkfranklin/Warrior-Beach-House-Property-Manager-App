@@ -17,12 +17,12 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-lg max-h-[90vh] overflow-y-auto mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-navy-700">
           <h2 className="font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
-        <div className="px-6 py-4 grid grid-cols-2 gap-4">
+        <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-slate-400 block mb-1">Date</label>
             <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inputCls} />
@@ -33,7 +33,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
               <option>Income</option><option>Expense</option>
             </select>
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400 block mb-1">Description</label>
             <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. Airbnb payout" className={inputCls} />
           </div>
@@ -49,7 +49,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
             </select>
           </div>
           {form.category === 'Cash Flow Support' && owners.length > 0 && (
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="text-xs text-slate-400 block mb-1">Owner</label>
               <select value={form.ownerId || ''} onChange={e => setForm({ ...form, ownerId: e.target.value })} className={inputCls}>
                 <option value="">— Select owner —</option>
@@ -76,7 +76,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
               </div>
             </>
           )}
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400 block mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={`${inputCls} resize-none`} />
           </div>
@@ -229,7 +229,7 @@ export default function Transactions() {
   const fmtFull = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Hover tooltip */}
       {tooltip && (() => {
         const { tx, x, y } = tooltip;
@@ -279,7 +279,7 @@ export default function Transactions() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Transactions</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -288,12 +288,12 @@ export default function Transactions() {
               : 'Track all income and expenses'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={exportCSV} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={exportCSV} className="flex items-center justify-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
             <Download size={14} /> Export CSV
           </button>
           {canEdit && (
-            <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            <button onClick={openAdd} className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               <Plus size={16} /> Add Transaction
             </button>
           )}
@@ -301,38 +301,38 @@ export default function Transactions() {
       </div>
 
       <div className="flex flex-wrap gap-4 mb-5">
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 flex-1 min-w-[160px]">
           <span className="text-xs text-slate-500">Description</span>
-          <input type="text" placeholder="Search…" value={filterDesc} onChange={e => setFilterDesc(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 w-52" />
+          <input type="text" placeholder="Search…" value={filterDesc} onChange={e => setFilterDesc(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 w-full sm:w-52" />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 flex-1 min-w-[120px]">
           <span className="text-xs text-slate-500">Type</span>
-          <select value={filterType} onChange={e => setFilterType(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
+          <select value={filterType} onChange={e => setFilterType(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white w-full">
             <option>All</option><option>Income</option><option>Expense</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 flex-1 min-w-[120px]">
           <span className="text-xs text-slate-500">Month</span>
-          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white" />
+          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white w-full" />
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 flex-1 min-w-[140px]">
           <span className="text-xs text-slate-500">Category</span>
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white w-full">
             <option value="">All Categories</option>
             {TRANSACTION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 flex-1 min-w-[140px]">
           <span className="text-xs text-slate-500">Status</span>
-          <select value={filterCategorized} onChange={e => setFilterCategorized(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white">
+          <select value={filterCategorized} onChange={e => setFilterCategorized(e.target.value)} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white w-full">
             <option value="all">All</option>
             <option value="categorized">Categorized</option>
             <option value="uncategorized">Uncategorized</option>
           </select>
         </label>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
           <span className="text-xs text-slate-500">Excluded</span>
-          <button onClick={() => setShowExcluded(v => !v)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors ${showExcluded ? 'bg-navy-800 border-navy-700 text-slate-400 hover:text-white' : 'bg-navy-700 border-navy-600 text-slate-300'}`}>
+          <button onClick={() => setShowExcluded(v => !v)} className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors w-full ${showExcluded ? 'bg-navy-800 border-navy-700 text-slate-400 hover:text-white' : 'bg-navy-700 border-navy-600 text-slate-300'}`}>
             <Ban size={13} /> {showExcluded ? 'Showing' : 'Hidden'}
           </button>
         </div>
@@ -348,6 +348,7 @@ export default function Transactions() {
       </div>
 
       <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
@@ -416,6 +417,7 @@ export default function Transactions() {
             {filtered.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-500">No transactions found</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

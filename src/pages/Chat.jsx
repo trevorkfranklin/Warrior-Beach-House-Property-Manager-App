@@ -202,17 +202,17 @@ Guidelines:
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-8 py-5 border-b border-navy-700 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 lg:px-8 py-5 border-b border-navy-700 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-white">AI Assistant</h1>
           <p className="text-slate-400 text-sm mt-0.5">Ask anything about your beach house finances or STR strategy</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <input
             value={model}
             onChange={e => setModel(e.target.value)}
             placeholder="model-id (e.g. meta-llama/llama-3.1-8b-instruct:free)"
-            className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white w-80 placeholder-slate-600"
+            className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white w-full sm:w-80 placeholder-slate-600"
           />
           <button
             onClick={() => { setShowKey(v => !v); setKeyDraft(apiKey); }}
@@ -226,7 +226,7 @@ Guidelines:
       </div>
 
       {showKey && (
-        <div className="px-8 py-3 border-b border-navy-700 bg-navy-800/50 flex items-center gap-3 flex-shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-navy-700 bg-navy-800/50 flex items-center gap-3 flex-wrap flex-shrink-0">
           <Key size={14} className="text-slate-400 flex-shrink-0" />
           <input
             type="password"
@@ -234,7 +234,7 @@ Guidelines:
             onChange={e => setKeyDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { setApiKey(keyDraft); setShowKey(false); } }}
             placeholder="sk-or-... — get a free key at openrouter.ai/keys"
-            className="flex-1 bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            className="flex-1 min-w-0 bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
             autoFocus
           />
           <button onClick={() => { setApiKey(keyDraft); setShowKey(false); }} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-medium">Save</button>
@@ -243,12 +243,12 @@ Guidelines:
       )}
 
       {!apiKey && !showKey && (
-        <div className="px-8 py-2.5 bg-yellow-500/10 border-b border-yellow-500/20 flex-shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-2.5 bg-yellow-500/10 border-b border-yellow-500/20 flex-shrink-0">
           <p className="text-yellow-400 text-xs">OpenRouter API key required. <button onClick={() => { setShowKey(true); setKeyDraft(''); }} className="underline hover:text-yellow-300">Click the key icon</button> to add it — free at <span className="font-mono">openrouter.ai/keys</span></p>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-6 space-y-6">
         {messages.length === 0 && (
           <div className="max-w-5xl mx-auto">
             <div className="flex items-center justify-center mb-8">
@@ -259,7 +259,7 @@ Guidelines:
             <p className="text-center text-slate-400 text-sm mb-8">
               I have full access to your beach house data. Ask me about reservations, finances, STR strategy, or Galveston market insights.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {SUGGESTED.map(s => (
                 <button key={s} onClick={() => send(s)} className="text-left text-sm text-slate-400 hover:text-white bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded-xl px-4 py-3 transition-colors">
                   {s}
@@ -272,7 +272,7 @@ Guidelines:
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'} max-w-5xl ${m.role === 'user' ? 'ml-auto' : 'mr-auto'}`}>
             {m.role === 'assistant' && <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"><Bot size={16} className="text-emerald-400" /></div>}
-            <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap max-w-3xl ${m.role === 'user' ? 'bg-emerald-500/20 text-white rounded-tr-sm' : 'bg-navy-800 border border-navy-700 text-slate-200 rounded-tl-sm'}`}>
+            <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap max-w-[85%] sm:max-w-md lg:max-w-3xl ${m.role === 'user' ? 'bg-emerald-500/20 text-white rounded-tr-sm' : 'bg-navy-800 border border-navy-700 text-slate-200 rounded-tl-sm'}`}>
               {m.content || <span className="text-slate-500 animate-pulse">▍</span>}
             </div>
             {m.role === 'user' && <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"><User size={16} className="text-blue-400" /></div>}
@@ -296,14 +296,14 @@ Guidelines:
         <div ref={bottomRef} />
       </div>
 
-      <div className="px-6 py-5 border-t border-navy-700 flex-shrink-0">
+      <div className="px-4 sm:px-6 py-5 border-t border-navy-700 flex-shrink-0">
         <div className="flex gap-3">
           <textarea
             ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder="Ask about reservations, finances, STR strategy…  (Enter to send, Shift+Enter for new line)"
             rows={1}
-            className="flex-1 bg-navy-800 border border-navy-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 resize-none focus:outline-none focus:border-emerald-500"
+            className="flex-1 min-w-0 bg-navy-800 border border-navy-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 resize-none focus:outline-none focus:border-emerald-500"
             style={{ minHeight: 48, maxHeight: 160 }}
           />
           <button onClick={() => send()} disabled={!input.trim() || loading}

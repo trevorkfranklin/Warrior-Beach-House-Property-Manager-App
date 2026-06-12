@@ -266,19 +266,19 @@ export default function ProjectedCashflow() {
   const period = viewMode === 'year' ? `${currentYear}` : 'Next 12 months';
 
   return (
-    <div className="p-8 flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Cashflow Summary</h1>
           <p className="text-slate-400 text-sm mt-1">{viewMode === 'year' ? `${currentYear} — Actuals + forward projections` : '12 months forward from today'}</p>
         </div>
-        <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg">
-          <button onClick={() => setViewMode('year')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'year' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Current Year</button>
-          <button onClick={() => setViewMode('forward')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'forward' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>12 Months Forward</button>
+        <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg w-full sm:w-auto">
+          <button onClick={() => setViewMode('year')} className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'year' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Current Year</button>
+          <button onClick={() => setViewMode('forward')} className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'forward' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>12 Months Forward</button>
         </div>
       </div>
 
-      <div className="grid gap-4 grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={TrendingUp}   label={`${period} Income`}   value={fmt(totalIncome)}  sub={viewMode === 'year' ? `YTD: ${fmt(ytdInc)}` : 'Actuals + projected'} color="emerald" />
         <StatCard icon={TrendingDown} label={`${period} Expenses`} value={fmt(totalExpense)} sub={viewMode === 'year' ? `YTD: ${fmt(ytdExp)}` : 'Actuals + projected'} color="red" />
         <StatCard icon={DollarSign}   label="Net Cashflow"         value={(totalNet >= 0 ? '+' : '-') + fmt(totalNet)} sub={period} color={totalNet >= 0 ? 'emerald' : 'red'} />
@@ -297,11 +297,11 @@ export default function ProjectedCashflow() {
           <span className="text-slate-600">Faded = projected</span>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 overflow-x-auto">
           <div className="flex flex-col justify-between text-right text-xs text-slate-500 w-10 flex-shrink-0" style={{ height: 358, paddingBottom: 38 }}>
             {[1, 0.75, 0.5, 0.25, 0].map(pct => <span key={pct}>{fmtAxis(maxVal * pct)}</span>)}
           </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-w-[640px]">
             <div className="grid grid-cols-12 gap-3">
               {monthData.map((m, i) => {
                 const isSelected = selectedIdx === i;
@@ -363,7 +363,7 @@ export default function ProjectedCashflow() {
 
         return (
           <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
               <h3 className="font-semibold text-white">{label}</h3>
               <button onClick={() => setSelectedIdx(null)} className="text-slate-500 hover:text-white text-xs">✕ close</button>
             </div>

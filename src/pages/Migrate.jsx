@@ -143,7 +143,7 @@ export default function Migrate() {
   };
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-2xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <Database size={22} className="text-emerald-400" />

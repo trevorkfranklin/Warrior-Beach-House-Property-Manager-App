@@ -5,7 +5,7 @@ import { useAuth } from '../context/Auth';
 function Modal({ title, children, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-navy-700">
           <h2 className="font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
@@ -68,7 +68,7 @@ export default function Users() {
   );
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {showAdd && (
         <Modal title="Add User" onClose={() => { setShowAdd(false); setError(''); }}>
           <div className="px-6 py-4 space-y-4">
@@ -106,14 +106,15 @@ export default function Users() {
         </Modal>
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div><h1 className="text-2xl font-bold text-white">Users</h1><p className="text-slate-400 text-sm mt-1">Manage access to this app</p></div>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium"><Plus size={16} /> Add User</button>
+        <button onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"><Plus size={16} /> Add User</button>
       </div>
 
       {success && <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm rounded-lg">{success}</div>}
 
       <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden mb-8">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
             <th className="text-left px-5 py-3">User</th>
@@ -147,11 +148,13 @@ export default function Users() {
             {users.length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-slate-500 text-sm">Loading users…</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div>
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Audit Log</h2>
         <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
               <th className="text-left px-5 py-3">Time</th>
@@ -171,6 +174,7 @@ export default function Users() {
               {auditLog.length === 0 && <tr><td colSpan={4} className="px-5 py-8 text-center text-slate-500 text-sm">No audit log entries</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

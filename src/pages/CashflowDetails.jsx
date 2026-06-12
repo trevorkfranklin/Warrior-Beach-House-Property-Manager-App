@@ -432,12 +432,12 @@ export default function CashflowDetails() {
   };
 
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
 
       {/* Per-month items modal */}
       {itemsModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md">
+          <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-navy-700">
               <h2 className="font-semibold text-white">
                 Other Expenses — {MONTHS[parseInt(itemsModal.split('-')[1], 10) - 1]} {itemsModal.split('-')[0]}
@@ -446,10 +446,10 @@ export default function CashflowDetails() {
             </div>
             <div className="px-6 py-4 flex flex-col gap-2">
               {itemsDraft.map(item => (
-                <div key={item.id} className="flex items-center gap-2">
+                <div key={item.id} className="flex items-center gap-2 flex-wrap">
                   <input type="text" placeholder="Description" value={item.label}
                     onChange={e => updateItem(item.id, 'label', e.target.value)}
-                    className="flex-1 bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                    className="flex-1 min-w-[120px] bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
                   <div className="relative w-32 flex-shrink-0">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                     <input type="number" min="0" step="0.01" value={item.amount}
@@ -475,15 +475,15 @@ export default function CashflowDetails() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Cashflow Details</h1>
           <p className="text-slate-400 text-sm mt-1">Month-by-month expense breakdown vs projected rental income</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg">
-            <button onClick={() => setViewMode('year')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'year' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Current Year</button>
-            <button onClick={() => setViewMode('forward')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'forward' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>13 Months</button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex gap-1 p-1 bg-navy-800 border border-navy-700 rounded-lg w-full sm:w-auto">
+            <button onClick={() => setViewMode('year')} className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'year' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>Current Year</button>
+            <button onClick={() => setViewMode('forward')} className={`flex-1 sm:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'forward' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>13 Months</button>
           </div>
           {!editingBudgets && (
             <button onClick={startEditBudgets} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm">
@@ -505,7 +505,7 @@ export default function CashflowDetails() {
       )}
 
       {/* Balance cards */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {wfBalance !== null && (
           <div className="bg-navy-800 border border-blue-500/30 rounded-xl px-5 py-4 flex items-center justify-between">
             <div>
@@ -525,7 +525,7 @@ export default function CashflowDetails() {
               {MONTHS[currentMonthIdx]} {currentYear} — Starting Balance
               {wfBalance !== null && startBals[currentMonthStr] == null && <span className="ml-2 text-slate-600">defaulting to WF balance</span>}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div>
                 {editingStartBal ? (
                   <input autoFocus type="number" step="0.01" value={startBalDraft}
@@ -569,7 +569,7 @@ export default function CashflowDetails() {
 
       {/* Budget defaults panel */}
       <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-1">
           <div>
             <h2 className="text-sm font-semibold text-white">Monthly Expense Defaults</h2>
             <p className="text-xs text-slate-500 mt-0.5">Used to pre-fill future months — click any cell in the table to override per month</p>
@@ -581,7 +581,7 @@ export default function CashflowDetails() {
             </div>
           )}
         </div>
-        <div className="grid grid-cols-5 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
           {EXPENSE_ITEMS.map(item => (
             <div key={item.key} className="bg-navy-900 rounded-lg p-3">
               <div className={`text-xs font-medium mb-2 ${item.col}`}>{item.label}</div>
@@ -612,10 +612,10 @@ export default function CashflowDetails() {
             {editingBudgets ? (
               <div className="flex flex-col gap-2">
                 {extraDraft.map(item => (
-                  <div key={item.id} className="flex items-center gap-2">
+                  <div key={item.id} className="flex items-center gap-2 flex-wrap">
                     <input type="text" placeholder="Expense name" value={item.label}
                       onChange={e => updateExtra(item.id, 'label', e.target.value)}
-                      className="flex-1 bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
+                      className="flex-1 min-w-[120px] bg-navy-900 border border-navy-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" />
                     <div className="relative w-36 flex-shrink-0">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                       <input type="number" min="0" step="1" value={item.amount}
@@ -629,7 +629,7 @@ export default function CashflowDetails() {
                 {extraDraft.length === 0 && <p className="text-xs text-slate-600 italic">No additional expenses.</p>}
               </div>
             ) : (
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {extraExpenses.map(item => (
                   <div key={item.id} className="bg-navy-900 rounded-lg p-3">
                     <div className="text-xs font-medium text-slate-400 mb-2 truncate">{item.label}</div>
@@ -932,7 +932,7 @@ export default function CashflowDetails() {
       {totalSupportNeeded > 0 && (
         <div className="bg-navy-800 border border-blue-400/30 rounded-xl p-5">
           <button
-            className="w-full flex items-center justify-between text-left mb-4"
+            className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between text-left gap-3 mb-4"
             onClick={() => setShowCFSSummary(v => !v)}
           >
             <div>
@@ -947,7 +947,7 @@ export default function CashflowDetails() {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+            <div className="flex items-center gap-3 sm:ml-4 flex-shrink-0">
               <div className="text-right">
                 <div className="text-lg font-bold text-blue-400">{fmt(totalSupportNeeded)}</div>
                 <div className="text-xs text-slate-500">combined total</div>
@@ -968,7 +968,7 @@ export default function CashflowDetails() {
 
                 return (
                   <div key={p.month}>
-                    <div className="flex items-baseline justify-between mb-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
                       <div className="text-sm font-semibold text-white">{MONTHS[mo - 1]} {yr}</div>
                       <div className="text-sm font-bold text-blue-400">{fmt(p.supportNeeded)} total</div>
                     </div>

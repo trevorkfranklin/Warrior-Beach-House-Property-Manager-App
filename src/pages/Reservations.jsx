@@ -55,10 +55,10 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
           <h2 className="font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
-        <div className="px-6 py-4 grid grid-cols-2 gap-4">
+        <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
 
           {/* Owner Hold toggle */}
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <div
                 onClick={() => toggleOwnerHold(!form.isOwnerHold)}
@@ -72,7 +72,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
 
           {!form.isOwnerHold && (
             <>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400 block mb-1">Guest Name *</label>
                 <input value={form.guestName} onChange={e => setForm({ ...form, guestName: e.target.value })} placeholder="Full name" className={inputCls} />
               </div>
@@ -106,13 +106,13 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
           </div>
 
           {nights > 0 && (
-            <div className="col-span-2 text-xs text-slate-400 -mt-2">
+            <div className="sm:col-span-2 text-xs text-slate-400 -mt-2">
               <span className={form.isOwnerHold ? 'text-yellow-400 font-semibold' : 'text-emerald-400 font-semibold'}>{nights}</span> night{nights !== 1 ? 's' : ''}
             </div>
           )}
 
           {form.isOwnerHold ? (
-            <div className="col-span-2 space-y-3">
+            <div className="sm:col-span-2 space-y-3">
               {owners.length > 0 && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Owner</label>
@@ -129,7 +129,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
             </div>
           ) : (
             <>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400 block mb-1">Gross Rent ($)</label>
                 <input
                   type="number" min="0" step="0.01"
@@ -166,7 +166,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
             </>
           )}
 
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400 block mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={`${inputCls} resize-none`} />
           </div>
@@ -279,9 +279,9 @@ function ReservationsChart({ enriched }) {
 
   return (
     <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
         <div className="text-sm font-semibold text-white">{metricLabel} · {chartYear}</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select value={metric} onChange={e => setMetric(e.target.value)}
             className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
             {METRIC_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -485,29 +485,29 @@ export default function Reservations() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {modal && (
         <Modal
           title={modal === 'edit' ? 'Edit Reservation' : form.isOwnerHold ? 'Add Owner Hold' : 'Add Reservation'}
           form={form} setForm={setForm} onSave={save} onClose={() => setModal(null)} owners={owners}
         />
       )}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Reservations</h1>
           <p className="text-slate-400 text-sm mt-1">Vacasa · guest stays + owner holds · 23% management fee</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={exportCSV} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={exportCSV} className="flex items-center justify-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
             <Download size={14} /> Export CSV
           </button>
           {canEdit && (
-            <button onClick={openOwnerHold} className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            <button onClick={openOwnerHold} className="flex items-center justify-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               <Home size={16} /> Add Owner Hold
             </button>
           )}
           {canEdit && (
-            <button onClick={openAdd} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            <button onClick={openAdd} className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               <Plus size={16} /> Add Reservation
             </button>
           )}
@@ -515,7 +515,7 @@ export default function Reservations() {
       </div>
 
       {/* Summary KPIs */}
-      <div className="grid grid-cols-4 gap-4 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
           <div className="text-xs text-slate-400 mb-1">Total Gross Rent</div>
           <div className="text-xl font-bold text-slate-300">{fmtFull(totals.totalGross)}</div>
@@ -533,7 +533,7 @@ export default function Reservations() {
           <div className="text-xl font-bold text-blue-400">{totals.netAdr > 0 ? fmtFull(totals.netAdr) : '—'}</div>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
           <div className="text-xs text-slate-400 mb-1">Guest Nights</div>
           <div className="text-xl font-bold text-white">{totals.guestNights}</div>
@@ -559,7 +559,7 @@ export default function Reservations() {
             {f}
           </button>
         ))}
-        <select value={filterYear} onChange={e => { setFilterYear(e.target.value); setFilterMonth(''); }} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white">
+        <select value={filterYear} onChange={e => { setFilterYear(e.target.value); setFilterMonth(''); }} className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white flex-1 min-w-[120px]">
           <option value="">All Years</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
@@ -567,12 +567,12 @@ export default function Reservations() {
           type="month"
           value={filterMonth}
           onChange={e => { setFilterMonth(e.target.value); setFilterYear(''); }}
-          className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white"
+          className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-1.5 text-sm text-white flex-1 min-w-[120px]"
         />
       </div>
 
       {/* Table */}
-      <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">

@@ -199,7 +199,7 @@ export default function Notifications() {
   };
 
   return (
-    <div className="p-8 flex flex-col gap-6">
+    <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Notifications</h1>
         <p className="text-slate-400 text-sm mt-1">Upcoming reservations, tax deadlines, and reminders</p>
@@ -207,12 +207,12 @@ export default function Notifications() {
 
       <div className="bg-navy-800 border border-navy-700 rounded-xl overflow-hidden">
         <button
-          className="w-full flex items-center justify-between px-5 py-4 text-left"
+          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left"
           onClick={() => { setEmailOpen(v => !v); setEmailDraft(null); setTestStatus(null); }}
         >
-          <div className="flex items-center gap-3">
-            <Mail size={16} className={emailSettings.enabled ? 'text-emerald-400' : 'text-slate-500'} />
-            <div>
+          <div className="flex items-center gap-3 min-w-0">
+            <Mail size={16} className={`flex-shrink-0 ${emailSettings.enabled ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <div className="min-w-0">
               <div className="text-sm font-semibold text-white">Email Notifications</div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {emailSettings.enabled ? 'Enabled — emails sent to owners automatically' : 'Disabled — owners not emailed'}
@@ -252,8 +252,8 @@ export default function Notifications() {
                       <input type="password" placeholder="••••••••••••••••••••" value={draft.publicKey} onChange={e => set('publicKey', e.target.value)} className={inputCls} />
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
                       {emailDraft && (
                         <button onClick={saveEmailSettings} className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-medium">Save</button>
                       )}
@@ -274,19 +274,19 @@ export default function Notifications() {
       </div>
 
       <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-sm font-semibold text-white">Cash Flow Support — {projection.monthLabel}</h2>
             <p className="text-xs text-slate-500 mt-0.5">Auto-sent on the 1st (initial) and when Vacasa income is recorded (updated)</p>
           </div>
-          <div className="flex gap-2 flex-shrink-0 ml-4">
+          <div className="flex flex-wrap gap-2 flex-shrink-0 sm:ml-4">
             <button onClick={() => resendCFS('initial')} className="flex items-center gap-1.5 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-xs font-medium">Resend Initial</button>
             <button onClick={() => resendCFS('updated')} className="flex items-center gap-1.5 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-xs font-medium">Resend Updated</button>
           </div>
         </div>
 
         <div className="bg-navy-900 rounded-lg p-4 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <div className="text-xs text-slate-500 mb-0.5">Income</div>
               <div className="text-sm font-semibold text-emerald-400">{projection.income > 0 ? fmtAmt(projection.income) : <span className="text-slate-600">—</span>}</div>

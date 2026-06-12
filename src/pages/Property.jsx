@@ -74,22 +74,22 @@ function Modal({ form, setForm, onSave, onClose, sfAccounts }) {
   const accountOptions = Object.values(sfAccounts);
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 w-full max-w-lg max-h-[90vh] overflow-y-auto mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-navy-700">
           <h2 className="font-semibold text-white">Edit Property Details</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
-        <div className="px-6 py-4 grid grid-cols-2 gap-4">
-          <div className="col-span-2"><label className="text-xs text-slate-400 block mb-1">Purchase Price ($)</label><input type="number" value={form.purchasePrice} onChange={e => setForm({ ...form, purchasePrice: e.target.value })} className={inputCls} /></div>
+        <div className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2"><label className="text-xs text-slate-400 block mb-1">Purchase Price ($)</label><input type="number" value={form.purchasePrice} onChange={e => setForm({ ...form, purchasePrice: e.target.value })} className={inputCls} /></div>
           <div><label className="text-xs text-slate-400 block mb-1">Bedrooms</label><input type="number" value={form.bedrooms} onChange={e => setForm({ ...form, bedrooms: e.target.value })} className={inputCls} /></div>
           <div><label className="text-xs text-slate-400 block mb-1">Bathrooms</label><input type="number" step="0.5" value={form.bathrooms} onChange={e => setForm({ ...form, bathrooms: e.target.value })} className={inputCls} /></div>
           <div><label className="text-xs text-slate-400 block mb-1">Sq Ft</label><input type="number" value={form.sqft} onChange={e => setForm({ ...form, sqft: e.target.value })} className={inputCls} /></div>
           <div><label className="text-xs text-slate-400 block mb-1">Status</label><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}><option>Active</option><option>Maintenance</option></select></div>
           <div><label className="text-xs text-slate-400 block mb-1">HOA Name</label><input value={form.hoa || ''} onChange={e => setForm({ ...form, hoa: e.target.value })} placeholder="e.g. Beachfront HOA" className={inputCls} /></div>
           <div><label className="text-xs text-slate-400 block mb-1">HOA Website</label><input type="url" value={form.hoaUrl || ''} onChange={e => setForm({ ...form, hoaUrl: e.target.value })} placeholder="https://..." className={inputCls} /></div>
-          <div className="col-span-2"><label className="text-xs text-slate-400 block mb-1">Notes</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={`${inputCls} resize-none`} /></div>
+          <div className="sm:col-span-2"><label className="text-xs text-slate-400 block mb-1">Notes</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={`${inputCls} resize-none`} /></div>
           {accountOptions.length > 0 && (
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="text-xs text-slate-400 block mb-1">Mortgage Account (SimpleFIN)</label>
               <select value={form.mortgageAccountId || ''} onChange={e => setForm({ ...form, mortgageAccountId: e.target.value })} className={inputCls}>
                 <option value="">— None —</option>
@@ -169,22 +169,22 @@ export default function Property() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {modal && <Modal form={form} setForm={setForm} onSave={save} onClose={() => setModal(false)} sfAccounts={sfAccounts} />}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Property</h1>
           <p className="text-slate-400 text-sm mt-1">18611 Warrior Rd, Galveston, TX 77554</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canEdit && sfAccessUrl && (
-            <button onClick={syncMortgageBalances} disabled={balanceSyncing} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            <button onClick={syncMortgageBalances} disabled={balanceSyncing} className="flex items-center justify-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 w-full sm:w-auto">
               <RefreshCw size={14} className={balanceSyncing ? 'animate-spin' : ''} />
               {balanceSyncing ? 'Syncing…' : 'Sync Balances'}
             </button>
           )}
           {canEdit && (
-            <button onClick={syncRentcast} disabled={syncing} className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            <button onClick={syncRentcast} disabled={syncing} className="flex items-center justify-center gap-2 bg-navy-700 hover:bg-navy-600 border border-navy-600 text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 w-full sm:w-auto">
               <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
               {syncing ? 'Syncing…' : 'Sync RentCast'}
             </button>
@@ -206,7 +206,7 @@ export default function Property() {
             <span className={`text-xs px-2 py-0.5 rounded-full ${property.status === 'Active' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-yellow-400/10 text-yellow-400'}`}>{property.status}</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 text-xs">
             <div className="bg-navy-900 rounded-lg p-2"><div className="text-slate-500">Purchase Price</div><div className="text-white font-semibold">{fmt(property.purchasePrice)}</div></div>
             <div className="bg-navy-900 rounded-lg p-2"><div className="text-slate-500">Beds / Baths</div><div className="text-white">{property.bedrooms || '—'} bd / {property.bathrooms || '—'} ba</div></div>
             <div className="bg-navy-900 rounded-lg p-2"><div className="text-slate-500">Sq Ft</div><div className="text-white">{property.sqft ? property.sqft.toLocaleString() : '—'}</div></div>
@@ -251,7 +251,7 @@ export default function Property() {
               )}
             </div>
             {rc && !rc.error ? (
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="bg-navy-900 rounded-lg p-2">
                   <div className="text-slate-500">Est. Value</div>
                   <div className="text-white font-semibold">{rc.estimatedValue ? fmt(rc.estimatedValue) : '—'}</div>

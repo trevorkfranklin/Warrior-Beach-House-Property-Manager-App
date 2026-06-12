@@ -463,14 +463,14 @@ export default function Import() {
   const inp = 'bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500';
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Import</h1>
         <p className="text-slate-400 text-sm mt-1">Sync bank transactions or import reservations from a screenshot</p>
       </div>
 
       {/* Mode tabs */}
-      <div className="flex gap-1 mb-8 p-1 bg-navy-800 border border-navy-700 rounded-lg w-fit">
+      <div className="flex gap-1 mb-8 p-1 bg-navy-800 border border-navy-700 rounded-lg w-fit overflow-x-auto max-w-full">
         <button onClick={() => setMode('bank')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${mode === 'bank' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}>
           <Landmark size={13} /> Bank Sync
         </button>
@@ -510,12 +510,12 @@ export default function Import() {
 
           {sfStep === 'sync' && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
                 <div>
                   <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium"><Check size={15} /> Chase connected · auto-syncs nightly at midnight</div>
                   {autoSyncDate && <div className="text-xs text-slate-500 mt-0.5">Last auto-sync: {autoSyncDate}</div>}
                 </div>
-                <button onClick={sfDisconnect} className="text-xs text-slate-500 hover:text-red-400 transition-colors ml-4">Disconnect</button>
+                <button onClick={sfDisconnect} className="text-xs text-slate-500 hover:text-red-400 transition-colors sm:ml-4">Disconnect</button>
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Fetch transactions since</label>
@@ -540,6 +540,7 @@ export default function Import() {
                   {sfDupes > 0 && <span className="text-slate-400">{sfDupes} already imported will be skipped.</span>}
                 </div>
                 <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
                       <th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Description</th><th className="text-left px-4 py-2">Type</th><th className="text-right px-4 py-2">Amount</th>
@@ -555,8 +556,9 @@ export default function Import() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex flex-wrap gap-3 justify-between">
                   <button onClick={() => setSfStep('sync')} className="text-slate-400 hover:text-white text-sm">← Back</button>
                   <button onClick={sfImport} disabled={sfFresh.length === 0} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-sm font-medium">
                     Import {sfFresh.length} Transaction{sfFresh.length !== 1 ? 's' : ''}
@@ -618,7 +620,7 @@ export default function Import() {
                   </select>
                 </div>
               ))}
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-navy-700">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-navy-700">
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Default Type</label>
                   <select value={defaultType} onChange={e => setDefaultType(e.target.value)} className={`w-full ${inp}`}><option>Income</option><option>Expense</option></select>
@@ -648,6 +650,7 @@ export default function Import() {
                   {totalDupes > 0 && <span className="text-slate-400">{totalDupes} duplicates will be skipped.</span>}
                 </div>
                 <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden mb-4">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
                       <th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Description</th><th className="text-left px-4 py-2">Type</th><th className="text-right px-4 py-2">Amount</th>
@@ -666,8 +669,9 @@ export default function Import() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex flex-wrap gap-3 justify-between">
                   <button onClick={() => setStep('map')} className="text-slate-400 hover:text-white text-sm">← Back</button>
                   <button onClick={doImport} disabled={totalFresh === 0} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-sm font-medium">
                     Import {totalFresh} Transaction{totalFresh !== 1 ? 's' : ''}
@@ -705,14 +709,14 @@ export default function Import() {
                   <span>OpenRouter API Key <span className="text-slate-600">(required — free at openrouter.ai/keys)</span></span>
                   {apiKey && <span className="text-emerald-400 text-xs">✓ Saved</span>}
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <input
                     type="password"
                     value={keyDraft || (apiKey ? '••••••••••••••••' : '')}
                     onChange={e => setKeyDraft(e.target.value)}
                     onFocus={e => { if (!keyDraft) setKeyDraft(apiKey); }}
                     placeholder="sk-or-..."
-                    className={`flex-1 ${inp} font-mono`}
+                    className={`flex-1 min-w-0 ${inp} font-mono`}
                   />
                   <button
                     onClick={() => { if (keyDraft) { setApiKey(keyDraft); setKeyDraft(''); } }}
@@ -762,8 +766,8 @@ export default function Import() {
 
           {ssStep === 'parse' && (
             <div className="space-y-5">
-              <div className="flex items-start gap-4 p-4 bg-navy-800 border border-navy-700 rounded-xl">
-                <img src={ssImageUrl} alt="Screenshot preview" className="w-48 rounded-lg object-cover border border-navy-600 flex-shrink-0" />
+              <div className="flex flex-col sm:flex-row items-start gap-4 p-4 bg-navy-800 border border-navy-700 rounded-xl">
+                <img src={ssImageUrl} alt="Screenshot preview" className="w-full sm:w-48 rounded-lg object-cover border border-navy-600 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium mb-1">Screenshot uploaded</p>
                   <p className="text-slate-400 text-xs mb-4">The AI will scan for GUEST STAY rows and extract dates, guest names, and net rent amounts. Owner holds will be skipped.</p>
@@ -789,8 +793,8 @@ export default function Import() {
                   {!apiKey && (
                     <div className="mb-3">
                       <label className="text-xs text-slate-400 block mb-1">OpenRouter API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="sk-or-..." className={`flex-1 ${inp} font-mono`} />
+                      <div className="flex flex-wrap gap-2">
+                        <input type="password" value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="sk-or-..." className={`flex-1 min-w-0 ${inp} font-mono`} />
                         <button onClick={() => { if (keyDraft) { setApiKey(keyDraft); setKeyDraft(''); } }} disabled={!keyDraft} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium">Save</button>
                       </div>
                     </div>
@@ -810,7 +814,7 @@ export default function Import() {
 
           {ssStep === 'review' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="text-white font-medium">{ssDraft.length} reservation{ssDraft.length !== 1 ? 's' : ''} extracted ({ssDraft.filter(r => !r.isOwnerHold).length} guest, {ssDraft.filter(r => r.isOwnerHold).length} owner holds)</p>
                   <p className="text-xs text-slate-500 mt-0.5">Guest stays: Vacasa net rent back-calculated to gross (÷ 0.77). Owner holds: $122 cleaning fee applied.</p>
@@ -827,7 +831,7 @@ export default function Import() {
                         <span className="text-xs text-slate-500">Cleaning fee: <span className="text-red-400">-$122.00</span></span>
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                       {!r.isOwnerHold && (
                         <>
                           <div>
@@ -857,8 +861,8 @@ export default function Import() {
                         </select>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex gap-4 text-slate-400">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex flex-wrap gap-4 text-slate-400">
                         <span><span className="text-slate-500">Nights:</span> <span className="text-white">{r.nights}</span></span>
                         {!r.isOwnerHold && <>
                           <span><span className="text-slate-500">Mgmt fee:</span> <span className="text-red-400">-{fmt(r.managementFee)}</span></span>
@@ -903,9 +907,9 @@ export default function Import() {
             { label: 'Clean up duplicates', sub: 'Removes exact duplicates and reassigns all IDs', action: cleanup, result: cleanupResult, btnLabel: 'Clean Up', resultMsg: cleanupResult === 0 ? 'No duplicates found.' : `Removed ${cleanupResult} duplicates.` },
           ].map(({ label, sub, action, result, btnLabel, resultMsg }) => (
             <div key={label}>
-              <div className="flex items-center justify-between p-4 bg-navy-800 border border-navy-700 rounded-xl mb-1">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-navy-800 border border-navy-700 rounded-xl mb-1">
                 <div><p className="text-sm text-white">{label}</p><p className="text-xs text-slate-500 mt-0.5">{sub}</p></div>
-                <button onClick={action} className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-slate-300 hover:text-white rounded-lg text-sm font-medium shrink-0 ml-4">{btnLabel}</button>
+                <button onClick={action} className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-slate-300 hover:text-white rounded-lg text-sm font-medium shrink-0 w-full sm:w-auto sm:ml-4">{btnLabel}</button>
               </div>
               {result !== null && <p className="mb-3 text-sm text-emerald-400 flex items-center gap-1.5 px-1"><Check size={14} />{resultMsg}</p>}
             </div>

@@ -23,11 +23,10 @@ export function useAutoSimpleFINSync() {
       });
       if (!res.ok) return;
       const data     = await res.json();
-      const EXCLUDED_ACCOUNT_SUFFIXES = ['6663', '5100', '9533'];
-      const accounts = (data.accounts || []).filter(a => {
-        const accountStr = `${a.id || ''} ${a.name || ''}`;
-        return !EXCLUDED_ACCOUNT_SUFFIXES.some(suffix => accountStr.includes(suffix));
-      });
+      const accounts = (data.accounts || []).filter(a =>
+        (a.org?.name || '').toLowerCase().includes('wells fargo') &&
+        !(a.name    || '').toLowerCase().includes('credit')
+      );
       const incoming = accounts.flatMap(acct =>
         (acct.transactions || []).map(tx => {
           const amount = parseFloat(tx.amount);

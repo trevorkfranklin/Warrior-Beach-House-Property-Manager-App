@@ -21,7 +21,7 @@ export default async function handler(req) {
 
   const exampleLines = (examples || []).slice(0, 50).map(tx => {
     let extra = '';
-    if (tx.category === 'Cash Flow Support' && tx.ownerId) {
+    if ((tx.category === 'Cash Flow Support' || tx.category === 'Rental Income') && tx.ownerId) {
       const o = (owners || []).find(o => o.id === tx.ownerId);
       if (o) extra += ` owner="${o.name}"`;
     }
@@ -43,7 +43,7 @@ OWNERS:
 ${ownerLines || '  (none)'}
 
 RULES:
-- Rental Income (Income): Vacasa payouts, Airbnb/VRBO/STR platform payouts, net rent received.
+- Rental Income (Income): Vacasa payouts, Airbnb/VRBO/STR platform payouts, net rent received. Set ownerId if the description or notes tie the payout to a specific owner.
 - Management Fees (Expense): Vacasa management fee deductions, platform commissions.
 - Cleaning / Housekeeping: cleaning service payments, housekeeping charges.
 - Cash Flow Support (Income or Expense): cash contributions from owners to cover expenses. Set ownerId if description matches an owner name.

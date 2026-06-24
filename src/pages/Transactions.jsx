@@ -10,6 +10,8 @@ import { useAuth } from '../context/Auth';
 
 const EMPTY = { id: '', date: new Date().toISOString().slice(0, 10), description: '', amount: '', type: 'Expense', category: '', ownerId: '', notes: '' };
 
+const OWNER_ASSIGNABLE_CATEGORIES = ['Cash Flow Support', 'Rental Income'];
+
 const fmtAmt = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function Modal({ title, form, setForm, onSave, onClose, owners }) {
@@ -48,7 +50,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
               {TRANSACTION_CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
-          {form.category === 'Cash Flow Support' && owners.length > 0 && (
+          {OWNER_ASSIGNABLE_CATEGORIES.includes(form.category) && owners.length > 0 && (
             <div className="col-span-2">
               <label className="text-xs text-slate-400 block mb-1">Owner</label>
               <select value={form.ownerId || ''} onChange={e => setForm({ ...form, ownerId: e.target.value })} className={inputCls}>
@@ -379,7 +381,7 @@ export default function Transactions() {
                     {tx.category === 'Property Tax' && tx.taxYear && (
                       <div className="text-xs text-slate-500 mt-0.5">Tax year {tx.taxYear}{tx.taxType ? ` — ${tx.taxType}` : ''}</div>
                     )}
-                    {tx.category === 'Cash Flow Support' && tx.ownerId && (
+                    {OWNER_ASSIGNABLE_CATEGORIES.includes(tx.category) && tx.ownerId && (
                       <div className="text-xs text-slate-500 mt-0.5">{owners.find(o => o.id === tx.ownerId)?.name || '—'}</div>
                     )}
                   </td>

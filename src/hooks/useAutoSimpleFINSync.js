@@ -2,28 +2,38 @@ import { useEffect, useCallback } from 'react';
 import { useAppSetting } from './useAppSetting';
 import { supabase } from '../lib/supabase';
 import { txToDb } from '../lib/db';
+import { fetchAccounts } from '../utils/simplefin';
 
 export function useAutoSimpleFINSync() {
   const [sfAccessUrl]               = useAppSetting('simplefin_url', '');
   const [lastSyncDate, setLastSyncDate] = useAppSetting('auto_sync_date', '');
+  const [, setSfAccounts]           = useAppSetting('simplefin_accounts', {});
+  const [, setMortgageSyncDate]     = useAppSetting('mortgage_sync_date', '');
 
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
   const runSync = useCallback(async () => {
     if (!sfAccessUrl) return;
     try {
-      const u    = new URL(sfAccessUrl);
-      const auth = btoa(`${u.username}:${u.password}`);
-      const base = `${u.protocol}//${u.host}${u.pathname}`;
-      const since = new Date();
-      since.setDate(since.getDate() - 2);
-      const startTs = Math.floor(since.getTime() / 1000);
-      const res = await fetch(`${base}/accounts?start-date=${startTs}`, {
-        headers: { Authorization: `Basic ${auth}` },
-      });
-      if (!res.ok) return;
-      const data     = await res.json();
-      const accounts = (data.accounts || []).filter(a =>
+      const allAccounts = await fetchAccounts(sfAccessUrl, 2);
+
+      // Refresh cached balances for every account — this is what drives the
+      // "Current Balance" / "Starting Balance" cards, which otherwise only
+      // update when someone manually clicks "Sync Balances" on the Property page.
+      if (allAccounts.length) {
+        const balanceMap = {};
+        for (const acct of allAccounts) {
+          balanceMap[acct.id] = {
+            id: acct.id, orgName: acct.org?.name || 'Unknown',
+            accountName: acct.name, balance: Math.abs(parseFloat(acct.balance || 0)),
+            fetchedAt: todayStr(),
+          };
+        }
+        await setSfAccounts(balanceMap);
+        await setMortgageSyncDate(todayStr());
+      }
+
+      const accounts = allAccounts.filter(a =>
         (a.org?.name || '').toLowerCase().includes('wells fargo') &&
         !(a.name    || '').toLowerCase().includes('credit')
       );

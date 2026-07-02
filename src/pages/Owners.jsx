@@ -71,6 +71,9 @@ export default function Owners() {
   const fmtSign = (n) => (n >= 0 ? '+' : '') + fmt(n);
 
   const currentMonthSlotIdx = chartSlots.findIndex(s => s.isCurrent);
+  const currentMonthLabel   = currentMonthSlotIdx >= 0
+    ? `${chartSlots[currentMonthSlotIdx].label} ${chartSlots[currentMonthSlotIdx].month.slice(0, 4)}`
+    : '';
 
   const toggleExpanded  = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -94,13 +97,13 @@ export default function Owners() {
     const totalSupport = supportTxs.reduce((s, t) => s + Number(t.amount), 0);
     const net          = totalSupport - cleaningCost;
 
-    // Reserve balance projection starting from May 2026 (current month)
-    const mayBalance  = ownerReserveStarts[owner.id];
-    const hasStart    = mayBalance != null;
+    // Reserve balance projection starting from the current month
+    const startBalance = ownerReserveStarts[owner.id];
+    const hasStart      = startBalance != null;
 
     let reserveProjection = [];
     if (hasStart && currentMonthSlotIdx >= 0) {
-      let bal = Number(mayBalance);
+      let bal = Number(startBalance);
       for (let i = currentMonthSlotIdx; i < chartSlots.length; i++) {
         if (i === currentMonthSlotIdx) {
           // Entered balance IS the current actual state — show as-is, no net adjustment
@@ -128,7 +131,7 @@ export default function Owners() {
       }
     }
 
-    const currentReserve = hasStart ? Number(mayBalance) : null;
+    const currentReserve = hasStart ? Number(startBalance) : null;
     const surplus        = currentReserve != null ? currentReserve - RESERVE_TARGET : null;
 
     return { ...owner, holdCount: holds.length, holdNights, cleaningCost, totalSupport, net, currentReserve, surplus, hasStart, reserveProjection };
@@ -231,15 +234,15 @@ export default function Owners() {
                   </div>
                   {canEdit && !editingReserve[o.id] && (
                     <button onClick={() => openEditReserve(o)} className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors">
-                      <Pencil size={11} /> {o.hasStart ? 'Edit' : 'Set'} May balance
+                      <Pencil size={11} /> {o.hasStart ? 'Edit' : 'Set'} {currentMonthLabel} balance
                     </button>
                   )}
                 </div>
 
-                {/* May balance input */}
+                {/* Current month balance input */}
                 {editingReserve[o.id] && canEdit && (
                   <div className="flex items-center gap-2 mb-3 bg-navy-900 rounded-lg px-3 py-2.5 border border-navy-600">
-                    <span className="text-xs text-slate-400 flex-shrink-0">May 2026 actual balance:</span>
+                    <span className="text-xs text-slate-400 flex-shrink-0">{currentMonthLabel} actual balance:</span>
                     <span className="text-slate-500 text-xs">$</span>
                     <input
                       type="number"
@@ -258,7 +261,7 @@ export default function Owners() {
 
                 {!o.hasStart ? (
                   <div className="bg-navy-900 border border-dashed border-navy-600 rounded-lg p-4 text-center">
-                    <p className="text-xs text-slate-500">No May 2026 balance set</p>
+                    <p className="text-xs text-slate-500">No {currentMonthLabel} balance set</p>
                     {canEdit && (
                       <button onClick={() => openEditReserve(o)} className="mt-1.5 text-xs text-emerald-400 hover:text-emerald-300">
                         Enter actual balance →
@@ -270,7 +273,7 @@ export default function Owners() {
                     {/* Balance tiles */}
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       <div className="bg-navy-900 rounded-lg p-2.5">
-                        <div className="text-xs text-slate-500 mb-1">May Balance</div>
+                        <div className="text-xs text-slate-500 mb-1">{currentMonthLabel} Balance</div>
                         <div className={`font-semibold text-sm ${o.currentReserve >= RESERVE_TARGET ? 'text-emerald-400' : o.currentReserve >= RESERVE_TARGET / 2 ? 'text-yellow-400' : 'text-red-400'}`}>
                           {fmt(o.currentReserve)}
                         </div>

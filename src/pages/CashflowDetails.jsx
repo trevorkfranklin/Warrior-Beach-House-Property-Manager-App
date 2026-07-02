@@ -99,7 +99,7 @@ export default function CashflowDetails() {
   const endBalColor = (v) => v < MIN_BALANCE ? 'text-red-400' : v > MIN_BALANCE ? 'text-emerald-400' : 'text-slate-400';
   const reserveColor = (v, target = RESERVE_TARGET) => v == null ? 'text-slate-600' : v < target ? 'text-red-400' : v > target ? 'text-emerald-400' : 'text-slate-400';
 
-  // ── Does every owner have a May 2026 reserve set? ───────────────────────
+  // ── Does every owner have a reserve set for the current month? ──────────
   const allOwnersHaveReserves = owners.length > 0 && owners.every(o => ownerReserveStarts[o.id] != null);
 
   // ── Slots ────────────────────────────────────────────────────────────────
@@ -339,7 +339,7 @@ export default function CashflowDetails() {
       }
       const startBal  = balance;
       const natural   = startBal + row.net + row.cashFlowSupport;
-      // CFS: reserve-based when all owners have entered their May balance; otherwise account floor
+      // CFS: reserve-based when all owners have entered their current-month balance; otherwise account floor
       const reserveEntry   = ownerReserveCalc.find(x => x.month === row.month);
       const supportNeeded  = allOwnersHaveReserves
         ? (reserveEntry?.totalCFS || 0)
@@ -500,7 +500,7 @@ export default function CashflowDetails() {
         </div>
       ) : owners.length > 0 && (
         <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-4 py-3 text-xs text-yellow-400">
-          Set May 2026 reserve balances for all owners on the Owners page to enable per-owner reserve tracking in CFS projections.
+          Set {MONTHS[currentMonthIdx]} {currentYear} reserve balances for all owners on the Owners page to enable per-owner reserve tracking in CFS projections.
         </div>
       )}
 

@@ -43,16 +43,14 @@ export default function CashflowDetails() {
   const [sfAccounts]                  = useAppSetting('simplefin_accounts', {});
   const [ownerReserveStarts, setOwnerReserveStarts] = useAppSetting('owner_reserve_starts', {});
 
-  const [projStartBal, setProjStartBal] = useAppSetting('cashflow_proj_start', 0);
-  const [startBals, setStartBals]       = useAppSetting('cashflow_start_bals', {});
+  const [projStartBal]                  = useAppSetting('cashflow_proj_start', 0);
+  const [startBals]                     = useAppSetting('cashflow_start_bals', {});
   const [endBals, setEndBals]           = useAppSetting('cashflow_end_bals', {});
 
   const [editingBudgets, setEditingBudgets] = useState(false);
   const [budgetDraft, setBudgetDraft]       = useState(DEFAULT_BUDGETS);
   const [extraDraft, setExtraDraft]         = useState([]);
   const [viewMode, setViewMode]             = useState('forward');
-  const [editingStartBal, setEditingStartBal] = useState(false);
-  const [startBalDraft, setStartBalDraft]     = useState('');
   const [editingEndBal, setEditingEndBal]     = useState(false);
   const [endBalDraft, setEndBalDraft]         = useState('');
 
@@ -84,13 +82,6 @@ export default function CashflowDetails() {
   const currentStartBal = startBals[currentMonthStr] ?? (wfBalance !== null ? Number(wfBalance) : Number(projStartBal) || 0);
   const currentEndBal   = endBals[currentMonthStr] != null ? Number(endBals[currentMonthStr]) : MIN_BALANCE;
 
-  const saveStartBal = () => {
-    const val = parseFloat(startBalDraft);
-    const amount = isNaN(val) ? 0 : val;
-    setStartBals(prev => ({ ...prev, [currentMonthStr]: amount }));
-    setProjStartBal(amount);
-    setEditingStartBal(false);
-  };
   const saveEndBal = () => {
     const val = parseFloat(endBalDraft);
     const amount = isNaN(val) ? 1000 : val;
@@ -519,68 +510,20 @@ export default function CashflowDetails() {
         </div>
       )}
 
-      {/* Balance cards */}
-      <div className="grid grid-cols-2 gap-4">
-        {wfBalance !== null && (
-          <div className="bg-navy-800 border border-blue-500/30 rounded-xl px-5 py-4 flex items-center justify-between">
-            <div>
-              <div className="text-xs text-slate-400 mb-1">WF Checking — Current Balance</div>
-              <div className={`text-2xl font-bold ${wfBalance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-                {wfBalance < 0 ? '-' : ''}${Math.abs(wfBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
-            <div className="w-12 h-12 bg-blue-400/10 rounded-xl flex items-center justify-center flex-shrink-0">
-              <span className="text-blue-400 text-lg font-bold">$</span>
+      {/* Balance card */}
+      {wfBalance !== null && (
+        <div className="bg-navy-800 border border-blue-500/30 rounded-xl px-5 py-4 flex items-center justify-between max-w-sm">
+          <div>
+            <div className="text-xs text-slate-400 mb-1">WF Checking — Current Balance</div>
+            <div className={`text-2xl font-bold ${wfBalance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+              {wfBalance < 0 ? '-' : ''}${Math.abs(wfBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
-        )}
-        <div className="bg-navy-800 border border-navy-700 rounded-xl px-5 py-4 flex items-center justify-between">
-          <div className="flex-1">
-            <div className="text-xs text-slate-400 mb-2">
-              {MONTHS[currentMonthIdx]} {currentYear} — Starting Balance
-              {wfBalance !== null && startBals[currentMonthStr] == null && <span className="ml-2 text-slate-600">defaulting to WF balance</span>}
-            </div>
-            <div className="flex items-center gap-4">
-              <div>
-                {editingStartBal ? (
-                  <input autoFocus type="number" step="0.01" value={startBalDraft}
-                    onChange={e => setStartBalDraft(e.target.value)}
-                    onBlur={saveStartBal}
-                    onKeyDown={e => { if (e.key === 'Enter') saveStartBal(); if (e.key === 'Escape') setEditingStartBal(false); }}
-                    className="w-40 bg-navy-900 border border-emerald-500 rounded-lg px-3 py-1 text-xl font-bold text-white focus:outline-none" />
-                ) : (
-                  <div className={`text-2xl font-bold cursor-pointer hover:opacity-80 ${currentStartBal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
-                    onClick={() => { setStartBalDraft(String(currentStartBal)); setEditingStartBal(true); }}
-                    title="Click to record actual starting balance">
-                    {fmt(currentStartBal)}
-                  </div>
-                )}
-                <div className="text-xs text-slate-500 mt-0.5">Click to update</div>
-              </div>
-              <div className="text-slate-600 text-lg">→</div>
-              <div>
-                {editingEndBal ? (
-                  <input autoFocus type="number" step="0.01" value={endBalDraft}
-                    onChange={e => setEndBalDraft(e.target.value)}
-                    onBlur={saveEndBal}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEndBal(); if (e.key === 'Escape') setEditingEndBal(false); }}
-                    className="w-40 bg-navy-900 border border-emerald-500 rounded-lg px-3 py-1 text-xl font-bold text-white focus:outline-none" />
-                ) : (
-                  <div className={`text-2xl font-bold cursor-pointer hover:opacity-80 ${endBalColor(currentEndBal)}`}
-                    onClick={() => { setEndBalDraft(String(currentEndBal)); setEditingEndBal(true); }}
-                    title="Click to record actual ending balance">
-                    {fmt(currentEndBal)}
-                  </div>
-                )}
-                <div className="text-xs text-slate-500 mt-0.5">{endBals[currentMonthStr] != null ? 'Actual end' : 'Proj. end (click to record)'}</div>
-              </div>
-            </div>
-          </div>
-          <div className="w-12 h-12 bg-emerald-400/10 rounded-xl flex items-center justify-center flex-shrink-0 ml-4">
-            <span className="text-emerald-400 text-lg font-bold">$</span>
+          <div className="w-12 h-12 bg-blue-400/10 rounded-xl flex items-center justify-center flex-shrink-0">
+            <span className="text-blue-400 text-lg font-bold">$</span>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Budget defaults panel */}
       <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
@@ -925,13 +868,24 @@ export default function CashflowDetails() {
                         })()]
                       : (() => {
                           const p = projection.find(x => x.month === row.month);
-                          if (row.isCurrent) return (
-                            <td className={`px-4 py-3 text-right font-semibold cursor-pointer hover:bg-navy-700/40 ${endBalColor(currentEndBal)}`}
-                              onClick={() => { setEndBalDraft(String(currentEndBal)); setEditingEndBal(true); }}
-                              title="Click to record actual ending balance">
-                              {fmt(currentEndBal)}
-                            </td>
-                          );
+                          if (row.isCurrent) {
+                            if (editingEndBal) return (
+                              <td className="px-2 py-2 text-right">
+                                <input autoFocus type="number" step="0.01" value={endBalDraft}
+                                  onChange={e => setEndBalDraft(e.target.value)}
+                                  onBlur={saveEndBal}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveEndBal(); if (e.key === 'Escape') setEditingEndBal(false); }}
+                                  className={cellInputCls} />
+                              </td>
+                            );
+                            return (
+                              <td className={`px-4 py-3 text-right font-semibold cursor-pointer hover:bg-navy-700/40 ${endBalColor(currentEndBal)}`}
+                                onClick={() => { setEndBalDraft(String(currentEndBal)); setEditingEndBal(true); }}
+                                title="Click to record actual ending balance">
+                                {fmt(currentEndBal)}
+                              </td>
+                            );
+                          }
                           return (
                             <td className={`px-4 py-3 text-right font-semibold ${p?.endBalance == null ? 'text-slate-600' : endBalColor(p.endBalance)}`}>
                               {p?.endBalance != null ? fmt(p.endBalance) : <span className="text-slate-600">—</span>}

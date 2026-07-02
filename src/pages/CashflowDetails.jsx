@@ -41,7 +41,7 @@ export default function CashflowDetails() {
   const [monthly, setMonthly]         = useAppSetting('cashflow_monthly', {});
   const [monthItems, setMonthItems]   = useAppSetting('cashflow_month_items', {});
   const [sfAccounts]                  = useAppSetting('simplefin_accounts', {});
-  const [ownerReserveStarts]          = useAppSetting('owner_reserve_starts', {});
+  const [ownerReserveStarts, setOwnerReserveStarts] = useAppSetting('owner_reserve_starts', {});
 
   const [projStartBal, setProjStartBal] = useAppSetting('cashflow_proj_start', 0);
   const [startBals, setStartBals]       = useAppSetting('cashflow_start_bals', {});
@@ -63,7 +63,11 @@ export default function CashflowDetails() {
   const [showExpenseDetail, setShowExpenseDetail] = useState(false);
   const [showCFSDetail, setShowCFSDetail]         = useState(false);
   const [showReserveDetail, setShowReserveDetail] = useState(false);
+  const [showStartBalDetail, setShowStartBalDetail] = useState(false);
   const [showCFSSummary, setShowCFSSummary]       = useState(false);
+
+  const [editingOwnerStart, setEditingOwnerStart] = useState({});
+  const [ownerStartDraft, setOwnerStartDraft]     = useState({});
 
   const currentYear     = new Date().getFullYear();
   const currentMonthIdx = new Date().getMonth();
@@ -92,6 +96,17 @@ export default function CashflowDetails() {
     const amount = isNaN(val) ? 1000 : val;
     setEndBals(prev => ({ ...prev, [currentMonthStr]: amount }));
     setEditingEndBal(false);
+  };
+
+  const openEditOwnerStart = (owner) => {
+    setOwnerStartDraft(prev => ({ ...prev, [owner.id]: ownerReserveStarts[owner.id] ?? '' }));
+    setEditingOwnerStart(prev => ({ ...prev, [owner.id]: true }));
+  };
+  const cancelEditOwnerStart = (id) => setEditingOwnerStart(prev => ({ ...prev, [id]: false }));
+  const saveOwnerStart = (id) => {
+    const val = parseFloat(ownerStartDraft[id]);
+    if (!isNaN(val)) setOwnerReserveStarts(prev => ({ ...prev, [id]: val }));
+    setEditingOwnerStart(prev => ({ ...prev, [id]: false }));
   };
 
   const fmt         = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -663,7 +678,28 @@ export default function CashflowDetails() {
           <thead>
             <tr className="border-b border-navy-700 text-xs uppercase">
               <th className="text-left px-4 py-3 text-slate-400 sticky left-0 bg-navy-800">Month</th>
-              <th className="text-right px-4 py-3 text-slate-400">Start Bal</th>
+              {/* Start Balance columns — expand/collapse */}
+              {showStartBalDetail && owners.length > 0
+                ? owners.map((o, idx) => (
+                    <th key={`start-h-${o.id}`}
+                      className={`text-right px-4 py-3 text-slate-400 whitespace-nowrap ${idx === 0 ? 'cursor-pointer hover:text-slate-300 select-none' : ''}`}
+                      onClick={idx === 0 ? () => setShowStartBalDetail(false) : undefined}
+                      title={idx === 0 ? 'Collapse start balance detail' : undefined}>
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {idx === 0 && <ChevronLeft size={11} />}
+                        {o.name.split(' ')[0]} Start
+                      </span>
+                    </th>
+                  ))
+                : <th className="text-right px-4 py-3 text-slate-400 cursor-pointer select-none hover:text-slate-300 whitespace-nowrap"
+                    onClick={() => owners.length > 0 && setShowStartBalDetail(true)}
+                    title={owners.length > 0 ? 'Expand start balance per owner' : undefined}>
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {owners.length > 0 && <ChevronRight size={11} />}
+                      Start Bal
+                    </span>
+                  </th>
+              }
               {showExpenseDetail && EXPENSE_ITEMS.map(item => (
                 <th key={item.key} className={`text-right px-4 py-3 ${item.col}`}>{item.label}</th>
               ))}
@@ -746,15 +782,40 @@ export default function CashflowDetails() {
                     {row.isCurrent && <span className="ml-2 text-xs text-emerald-500 font-normal">current</span>}
                   </td>
 
-                  {/* Start Balance */}
-                  {(() => {
-                    const p = projection.find(x => x.month === row.month);
-                    return (
-                      <td className={`px-4 py-3 text-right ${p?.startBalance != null ? endBalColor(p.startBalance) : ''}`}>
-                        {p?.startBalance != null ? fmt(p.startBalance) : <span className="text-slate-600">—</span>}
-                      </td>
-                    );
-                  })()}
+                  {/* Start Balance — per-owner when expanded, combined when collapsed */}
+                  {showStartBalDetail && owners.length > 0
+                    ? owners.map(o => {
+                        const val = reserveEntry?.startBalance[o.id];
+                        if (row.isCurrent && editingOwnerStart[o.id]) {
+                          return (
+                            <td key={`start-${o.id}`} className="px-2 py-2 text-right">
+                              <input autoFocus type="number" step="0.01" value={ownerStartDraft[o.id] ?? ''}
+                                onChange={e => setOwnerStartDraft(prev => ({ ...prev, [o.id]: e.target.value }))}
+                                onBlur={() => saveOwnerStart(o.id)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveOwnerStart(o.id); if (e.key === 'Escape') cancelEditOwnerStart(o.id); }}
+                                className={cellInputCls} />
+                            </td>
+                          );
+                        }
+                        if (row.isPast) return <td key={`start-${o.id}`} className="px-4 py-3 text-right text-slate-600">—</td>;
+                        return (
+                          <td key={`start-${o.id}`}
+                            className={`px-4 py-3 text-right ${val != null ? reserveColor(val) : ''} ${row.isCurrent ? 'cursor-pointer hover:bg-navy-700/40' : ''}`}
+                            onClick={row.isCurrent ? () => openEditOwnerStart(o) : undefined}
+                            title={row.isCurrent ? 'Click to record actual starting balance' : undefined}>
+                            {val != null ? fmtDec(val) : <span className="text-slate-600">—</span>}
+                          </td>
+                        );
+                      })
+                    : (() => {
+                        const p = projection.find(x => x.month === row.month);
+                        return (
+                          <td key="start-collapsed" className={`px-4 py-3 text-right ${p?.startBalance != null ? endBalColor(p.startBalance) : ''}`}>
+                            {p?.startBalance != null ? fmt(p.startBalance) : <span className="text-slate-600">—</span>}
+                          </td>
+                        );
+                      })()
+                  }
 
                   {/* Fixed expense cells */}
                   {showExpenseDetail && EXPENSE_ITEMS.map(item => (
@@ -886,7 +947,10 @@ export default function CashflowDetails() {
           <tfoot>
             <tr className="border-t-2 border-navy-600 bg-navy-900/60">
               <td className="px-4 py-3 font-bold text-white sticky left-0 bg-navy-900/60">Total</td>
-              <td className="px-4 py-3" />
+              {showStartBalDetail && owners.length > 0
+                ? owners.map(o => <td key={`start-total-${o.id}`} className="px-4 py-3" />)
+                : <td className="px-4 py-3" />
+              }
               {showExpenseDetail && EXPENSE_ITEMS.map(item => (
                 <td key={item.key} className="px-4 py-3 text-right font-semibold text-slate-200">{fmt(totals[item.key])}</td>
               ))}

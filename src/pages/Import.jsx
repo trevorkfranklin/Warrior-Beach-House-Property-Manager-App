@@ -82,7 +82,6 @@ For each entry return an object with exactly these keys:
   "month": <3-letter uppercase month abbreviation from the badge, e.g. "MAY">,
   "year": <4-digit integer — read from a year header like "2026 Reservations"; if not visible use ${new Date().getFullYear()}>,
   "nights": <integer number of nights>,
-  "guestName": <first name + last initial for GUEST_STAY only, e.g. "Krystal J"; use null for OWNER_HOLD>,
   "netRent": <dollar amount in NET RENT column for GUEST_STAY, e.g. 289.33; use 0 for OWNER_HOLD>
 }`;
 
@@ -350,9 +349,6 @@ export default function Import() {
         }
         return {
           id:            crypto.randomUUID(),
-          guestName:     isOwnerHold ? 'Owner Hold' : (entry.guestName || ''),
-          guestEmail:    '',
-          guestPhone:    '',
           isOwnerHold,
           checkIn,
           checkOut,
@@ -400,13 +396,11 @@ export default function Import() {
 
   function removeDraft(id) { setSsDraft(prev => prev.filter(r => r.id !== id)); }
 
+  const resDupeKey = (r) => `${r.checkIn}|${r.checkOut}|${r.isOwnerHold}|${Number(r.netRent || 0).toFixed(2)}`;
+
   async function ssImport() {
-    const existingKeys = new Set(
-      reservations.map(r => `${r.checkIn}|${r.guestName?.toLowerCase()}`)
-    );
-    const fresh = ssDraft.filter(r =>
-      !existingKeys.has(`${r.checkIn}|${r.guestName?.toLowerCase()}`)
-    );
+    const existingKeys = new Set(reservations.map(resDupeKey));
+    const fresh = ssDraft.filter(r => !existingKeys.has(resDupeKey(r)));
     await bulkAddReservations(fresh);
     setSsStep('done');
   }
@@ -765,7 +759,7 @@ export default function Import() {
                 <img src={ssImageUrl} alt="Screenshot preview" className="w-48 rounded-lg object-cover border border-navy-600 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium mb-1">Screenshot uploaded</p>
-                  <p className="text-slate-400 text-xs mb-4">The AI will scan for GUEST STAY rows and extract dates, guest names, and net rent amounts. Owner holds will be skipped.</p>
+                  <p className="text-slate-400 text-xs mb-4">The AI will scan for GUEST STAY rows and extract dates and net rent amounts. Owner holds will be skipped.</p>
                   <div className="mb-3">
                     <label className="text-xs text-slate-400 block mb-1 flex items-center justify-between">
                       <span>Vision Model</span>
@@ -827,14 +821,6 @@ export default function Import() {
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3 mb-3">
-                      {!r.isOwnerHold && (
-                        <>
-                          <div>
-                            <label className="text-xs text-slate-400 block mb-1">Guest Name</label>
-                            <input value={r.guestName} onChange={e => updateDraft(r.id, 'guestName', e.target.value)} className={`w-full ${inp}`} />
-                          </div>
-                        </>
-                      )}
                       <div>
                         <label className="text-xs text-slate-400 block mb-1">Check-In</label>
                         <input type="date" value={r.checkIn} onChange={e => updateDraft(r.id, 'checkIn', e.target.value)} className={`w-full ${inp}`} />

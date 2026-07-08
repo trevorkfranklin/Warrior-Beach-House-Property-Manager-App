@@ -8,7 +8,7 @@ const MGMT_RATE          = 0.23;
 const OWNER_CLEANING_FEE = 122;
 
 const EMPTY = {
-  id: '', guestName: '', guestEmail: '', guestPhone: '',
+  id: '',
   checkIn: '', checkOut: '',
   grossRent: '', isOwnerHold: false, status: 'Upcoming', notes: '',
 };
@@ -43,7 +43,6 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
     setForm({
       ...form,
       isOwnerHold: checked,
-      guestName:   checked ? 'Owner Hold' : (form.guestName === 'Owner Hold' ? '' : form.guestName),
       grossRent:   checked ? '' : form.grossRent,
     });
   };
@@ -69,23 +68,6 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
               <span className="text-sm text-slate-300">Owner Hold <span className="text-slate-500 text-xs">(${OWNER_CLEANING_FEE} cleaning fee applied)</span></span>
             </label>
           </div>
-
-          {!form.isOwnerHold && (
-            <>
-              <div className="col-span-2">
-                <label className="text-xs text-slate-400 block mb-1">Guest Name *</label>
-                <input value={form.guestName} onChange={e => setForm({ ...form, guestName: e.target.value })} placeholder="Full name" className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Email</label>
-                <input type="email" value={form.guestEmail} onChange={e => setForm({ ...form, guestEmail: e.target.value })} className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Phone</label>
-                <input value={form.guestPhone} onChange={e => setForm({ ...form, guestPhone: e.target.value })} className={inputCls} />
-              </div>
-            </>
-          )}
 
           <div>
             <label className="text-xs text-slate-400 block mb-1">Status</label>
@@ -175,7 +157,7 @@ function Modal({ title, form, setForm, onSave, onClose, owners }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
           <button
             onClick={onSave}
-            disabled={(!form.isOwnerHold && !form.guestName) || !form.checkIn || !form.checkOut}
+            disabled={!form.checkIn || !form.checkOut}
             className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium flex items-center gap-2"
           >
             <Check size={14} /> Save
@@ -430,11 +412,10 @@ export default function Reservations() {
   }, [filtered]);
 
   const openAdd       = () => { setForm({ ...EMPTY, id: crypto.randomUUID() }); setModal('add'); };
-  const openOwnerHold = () => { setForm({ ...EMPTY, id: crypto.randomUUID(), isOwnerHold: true, guestName: 'Owner Hold' }); setModal('add'); };
+  const openOwnerHold = () => { setForm({ ...EMPTY, id: crypto.randomUUID(), isOwnerHold: true }); setModal('add'); };
   const openEdit      = (r) => { setForm({ ...r }); setModal('edit'); };
 
   const save = async () => {
-    if (!form.isOwnerHold && !form.guestName) return;
     if (!form.checkIn || !form.checkOut) return;
     const nights      = computeNights(form.checkIn, form.checkOut);
     const isOwnerHold = !!form.isOwnerHold;
@@ -442,7 +423,6 @@ export default function Reservations() {
     const { managementFee, netRent, grossNightlyRate, netNightlyRate } = deriveFields(grossRent, nights, isOwnerHold);
     const record = {
       ...form,
-      guestName: isOwnerHold ? 'Owner Hold' : form.guestName,
       grossRent, nights, managementFee, netRent, grossNightlyRate, netNightlyRate, isOwnerHold,
     };
     if (modal === 'add') await addReservation(record);
@@ -456,10 +436,9 @@ export default function Reservations() {
 
   const exportCSV = () => {
     const esc = (v) => { const s = String(v ?? ''); return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const headers = ['Type','Guest Name','Email','Phone','Check-In','Check-Out','Nights','Gross Rent','Management Fee','Net Rent','Gross $/Night','Net $/Night','Status','Notes'];
+    const headers = ['Type','Check-In','Check-Out','Nights','Gross Rent','Management Fee','Net Rent','Gross $/Night','Net $/Night','Status','Notes'];
     const lines = filtered.map(r => [
       r.isOwnerHold ? 'Owner Hold' : 'Guest Stay',
-      r.guestName, r.guestEmail || '', r.guestPhone || '',
       r.checkIn, r.checkOut, r.nights,
       Number(r.grossRent || 0).toFixed(2),
       r.managementFee.toFixed(2),
@@ -576,7 +555,7 @@ export default function Reservations() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-navy-700 text-slate-400 text-xs uppercase">
-              <th className="text-left px-4 py-3">Guest</th>
+              <th className="text-left px-4 py-3">Type</th>
               <th className="text-left px-4 py-3">Check-In</th>
               <th className="text-left px-4 py-3">Check-Out</th>
               <th className="text-center px-4 py-3">Nights</th>
@@ -595,7 +574,7 @@ export default function Reservations() {
                 <td className="px-4 py-3">
                   {r.isOwnerHold
                     ? <span className="text-yellow-400 font-medium flex items-center gap-1.5"><Home size={13} /> Owner Hold</span>
-                    : <><div className="text-white font-medium">{r.guestName}</div>{r.guestEmail && <div className="text-xs text-slate-500 mt-0.5">{r.guestEmail}</div>}</>
+                    : <span className="text-white font-medium">Guest Stay</span>
                   }
                 </td>
                 <td className="px-4 py-3 text-slate-300">{r.checkIn}</td>

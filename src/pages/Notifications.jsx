@@ -19,14 +19,16 @@ function buildAutoNotifications(reservations, propertyTaxes, hoaDues, transactio
   for (const r of reservations) {
     if (r.status === 'Cancelled') continue;
     if (r.checkIn >= today && r.checkIn <= in7) {
-      notes.push({ id: `checkin-${r.id}`, type: 'info', title: `Check-in: ${r.guestName}`, body: `${r.checkIn} – ${r.checkOut} · ${r.nights} nights` });
+      const label = r.isOwnerHold ? 'Owner Hold' : 'Guest Stay';
+      notes.push({ id: `checkin-${r.id}`, type: 'info', title: `Check-in: ${label}`, body: `${r.checkIn} – ${r.checkOut} · ${r.nights} nights` });
     }
   }
 
   for (const r of reservations) {
     if (r.status === 'Cancelled') continue;
     if (r.checkOut === today) {
-      notes.push({ id: `checkout-${r.id}`, type: 'info', title: `Check-out today: ${r.guestName}`, body: `${r.checkOut} — remember cleaning and inspection` });
+      const label = r.isOwnerHold ? 'Owner Hold' : 'Guest Stay';
+      notes.push({ id: `checkout-${r.id}`, type: 'info', title: `Check-out today: ${label}`, body: `${r.checkOut} — remember cleaning and inspection` });
     }
   }
 

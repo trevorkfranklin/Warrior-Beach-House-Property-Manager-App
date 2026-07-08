@@ -380,7 +380,7 @@ export default function ProjectedCashflow() {
                     {contributingRes.map(r => (
                       <div key={r.id} className="flex justify-between text-xs gap-2">
                         <span className={`truncate ${r.isOwnerHold ? 'text-yellow-400' : 'text-slate-400'}`}>
-                          {r.isOwnerHold ? 'Owner Hold' : r.guestName}
+                          {r.isOwnerHold ? 'Owner Hold' : `Guest Stay (${r.checkIn})`}
                           {r.nightsInPrior < r.totalNights && (
                             <span className="text-slate-600 ml-1">({r.nightsInPrior}/{r.totalNights} nights)</span>
                           )}

@@ -262,7 +262,7 @@ export default function Dashboard() {
             {upcomingReservations.map(r => (
               <div key={r.id} className="flex items-center justify-between px-5 py-3">
                 <div>
-                  <div className="text-sm text-white">{r.guestName}</div>
+                  <div className="text-sm text-white">{r.isOwnerHold ? 'Owner Hold' : 'Guest Stay'}</div>
                   <div className="text-xs text-slate-500">{r.checkIn} – {r.checkOut} · {r.nights} nights</div>
                 </div>
                 <div className="flex items-center gap-3">

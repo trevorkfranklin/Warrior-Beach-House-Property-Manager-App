@@ -36,9 +36,6 @@ export const txToDb = (t) => ({
 // ─── Reservations ────────────────────────────────────────────
 export const dbToRes = (r) => ({
   id:               r.id,
-  guestName:        r.guest_name,
-  guestEmail:       r.guest_email || '',
-  guestPhone:       r.guest_phone || '',
   checkIn:          r.check_in,
   checkOut:         r.check_out,
   grossRent:        Number(r.gross_rent),
@@ -55,9 +52,6 @@ export const dbToRes = (r) => ({
 
 export const resToDb = (r) => ({
   id:                 r.id,
-  guest_name:         r.guestName,
-  guest_email:        r.guestEmail || '',
-  guest_phone:        r.guestPhone || '',
   check_in:           r.checkIn,
   check_out:          r.checkOut,
   gross_rent:         Number(r.grossRent) || 0,

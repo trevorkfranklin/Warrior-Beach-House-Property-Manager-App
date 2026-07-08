@@ -30,7 +30,8 @@ function buildContext(property, reservations, transactions, taxes, hoa) {
   const resLines = reservations.map(r => {
     const nights = r.nights || 0;
     const status = r.checkOut < today ? 'Complete' : r.checkIn <= today ? 'Active' : 'Upcoming';
-    return `  • ${r.guestName} | ${r.checkIn} – ${r.checkOut} | ${nights} nights | Gross: ${fmtM(r.grossRent)} | Net: ${fmtM(r.netRent)} | ${status}`;
+    const label = r.isOwnerHold ? 'Owner Hold' : 'Guest Stay';
+    return `  • ${label} | ${r.checkIn} – ${r.checkOut} | ${nights} nights | Gross: ${fmtM(r.grossRent)} | Net: ${fmtM(r.netRent)} | ${status}`;
   }).join('\n');
 
 

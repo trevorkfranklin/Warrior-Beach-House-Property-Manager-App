@@ -208,11 +208,25 @@ function ReservationsChart({ enriched }) {
 
   const monthlyData = useMemo(() => CHART_MONTHS.map((label, mo) => {
     const monthStr  = `${chartYear}-${String(mo + 1).padStart(2, '0')}`;
+    const monthStart = monthStr + '-01';
+    const nextMonthStart = mo === 11
+      ? `${Number(chartYear) + 1}-01-01`
+      : `${chartYear}-${String(mo + 2).padStart(2, '0')}-01`;
+    const nightsInMonth = (r) => {
+      const cin  = r.checkIn  > monthStart     ? r.checkIn  : monthStart;
+      const cout = r.checkOut < nextMonthStart ? r.checkOut : nextMonthStart;
+      return cin < cout ? (new Date(cout) - new Date(cin)) / 86400000 : 0;
+    };
+    const overlapping = enriched.filter(r =>
+      r.derivedStatus !== 'Cancelled' && r.checkIn && r.checkOut &&
+      r.checkIn < nextMonthStart && r.checkOut > monthStart
+    );
+    const guestNights = overlapping.filter(r => !r.isOwnerHold).reduce((s, r) => s + nightsInMonth(r), 0);
+    const ownerNights = overlapping.filter(r =>  r.isOwnerHold).reduce((s, r) => s + nightsInMonth(r), 0);
+
     const monthRes  = enriched.filter(r => r.derivedStatus !== 'Cancelled' && r.checkIn?.startsWith(monthStr));
     const guests    = monthRes.filter(r => !r.isOwnerHold);
     const holds     = monthRes.filter(r => r.isOwnerHold);
-    const guestNights = guests.reduce((s, r) => s + r.nights, 0);
-    const ownerNights = holds.reduce((s, r) => s + r.nights, 0);
     const totalGross  = guests.reduce((s, r) => s + (Number(r.grossRent) || 0), 0);
     const daysInMonth = new Date(Number(chartYear), mo + 1, 0).getDate();
     return {

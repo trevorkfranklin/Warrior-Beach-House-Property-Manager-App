@@ -71,12 +71,15 @@ export default function Dashboard() {
     const monthCFS       = monthTx.filter(t => t.category === 'Cash Flow Support').reduce((s, t) => s + Number(t.amount), 0);
 
     const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
+    const nextMonthStart = currentMonthIdx === 11
+      ? `${currentYear + 1}-01-01`
+      : `${currentYear}-${String(currentMonthIdx + 2).padStart(2, '0')}-01`;
     let monthOccupiedNights = 0;
     for (const r of reservations) {
       if (r.status === 'Cancelled') continue;
       const cin  = r.checkIn  > currentMonth + '-01' ? r.checkIn  : currentMonth + '-01';
-      const cout = r.checkOut < currentMonth + '-' + String(daysInMonth).padStart(2,'0') ? r.checkOut : currentMonth + '-' + String(daysInMonth).padStart(2,'0');
-      if (cin <= cout) monthOccupiedNights += Math.max((new Date(cout) - new Date(cin)) / 86400000, 0);
+      const cout = r.checkOut < nextMonthStart ? r.checkOut : nextMonthStart;
+      if (cin < cout) monthOccupiedNights += (new Date(cout) - new Date(cin)) / 86400000;
     }
     const monthRes     = reservations.filter(r => r.status !== 'Cancelled' && !r.isOwnerHold && r.checkIn?.startsWith(currentMonth));
     const monthNights  = monthRes.reduce((s, r) => s + (Number(r.nights) || 0), 0);

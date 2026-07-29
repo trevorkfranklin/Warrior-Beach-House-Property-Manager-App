@@ -63,7 +63,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ skipped: true, reason: 'simplefin_url not configured' });
     }
 
-    const allAccounts = await fetchAccounts(sfAccessUrl, 2);
+    // SimpleFIN's Wells Fargo feed can lag more than a day or two behind actual
+    // posting dates, so a narrow window can miss a transaction on the night it
+    // posts and then age it out of range on every subsequent run. Dedup below is
+    // keyed on sf_tx_id / date+description+amount+type, so re-checking a wider
+    // window nightly is safe — nothing gets double-imported.
+    const allAccounts = await fetchAccounts(sfAccessUrl, 14);
 
     if (allAccounts.length) {
       const balanceMap = {};

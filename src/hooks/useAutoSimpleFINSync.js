@@ -15,7 +15,10 @@ export function useAutoSimpleFINSync() {
   const runSync = useCallback(async () => {
     if (!sfAccessUrl) return;
     try {
-      const allAccounts = await fetchAccounts(sfAccessUrl, 2);
+      // Wide window because SimpleFIN's Wells Fargo feed can lag behind actual
+      // posting dates by more than a day or two; dedup below (sf_tx_id / key)
+      // makes re-checking a wider range nightly safe.
+      const allAccounts = await fetchAccounts(sfAccessUrl, 14);
 
       // Refresh cached balances for every account — this is what drives the
       // "Current Balance" / "Starting Balance" cards, which otherwise only

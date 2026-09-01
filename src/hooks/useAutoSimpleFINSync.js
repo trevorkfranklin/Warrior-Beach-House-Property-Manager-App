@@ -58,9 +58,14 @@ export function useAutoSimpleFINSync() {
 
       if (!incoming.length) { await setLastSyncDate(todayStr()); return; }
 
-      // Deduplication: check existing sfTxId and description+amount+date+type keys
+      // Deduplication: check existing sfTxId and description+amount+date+type keys.
+      // Scoped to the fetched window — an unbounded select is capped at 1000
+      // rows by PostgREST with no guaranteed order, so on a large table it can
+      // silently miss rows and reimport them.
+      const earliest = incoming.reduce((min, tx) => (tx.date < min ? tx.date : min), incoming[0].date);
       const { data: existing } = await supabase
-        .from('transactions').select('sf_tx_id, date, description, amount, type');
+        .from('transactions').select('sf_tx_id, date, description, amount, type')
+        .gte('date', earliest);
       const existingIds  = new Set((existing || []).map(t => t.sf_tx_id).filter(Boolean));
       const existingKeys = new Set((existing || []).map(t => `${t.date}|${t.description}|${Number(t.amount)}|${t.type}`));
       const fresh = incoming.filter(tx =>
@@ -69,7 +74,12 @@ export function useAutoSimpleFINSync() {
       );
 
       if (fresh.length) {
-        await supabase.from('transactions').insert(fresh.map(txToDb));
+        // upsert + ignoreDuplicates makes this safe even if the cron sync
+        // (api/sync-transactions.js) races this run — the DB's unique
+        // constraint on sf_tx_id is the real guard, this is just the fast path.
+        await supabase
+          .from('transactions')
+          .upsert(fresh.map(txToDb), { onConflict: 'sf_tx_id', ignoreDuplicates: true });
       }
       await setLastSyncDate(todayStr());
     } catch { /* silent */ }

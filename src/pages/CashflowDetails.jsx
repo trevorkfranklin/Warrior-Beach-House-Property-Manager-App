@@ -751,10 +751,15 @@ export default function CashflowDetails() {
                         );
                       })
                     : (() => {
+                        const hasAllStarts = owners.length > 0 && owners.every(o => reserveEntry?.startBalance[o.id] != null);
+                        const combinedStart = hasAllStarts
+                          ? owners.reduce((s, o) => s + reserveEntry.startBalance[o.id], 0)
+                          : null;
                         const p = projection.find(x => x.month === row.month);
+                        const val = combinedStart != null ? combinedStart : p?.startBalance;
                         return (
-                          <td key="start-collapsed" className={`px-4 py-3 text-right ${p?.startBalance != null ? endBalColor(p.startBalance) : ''}`}>
-                            {p?.startBalance != null ? fmt(p.startBalance) : <span className="text-slate-600">—</span>}
+                          <td key="start-collapsed" className={`px-4 py-3 text-right ${val != null ? endBalColor(val) : ''}`}>
+                            {val != null ? fmt(val) : <span className="text-slate-600">—</span>}
                           </td>
                         );
                       })()

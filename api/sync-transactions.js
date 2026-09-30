@@ -111,8 +111,14 @@ export default async function handler(req, res) {
 
     let insertedCount = 0;
     if (incoming.length) {
+      // Scope this to the window we actually fetched (plus slack) — an
+      // unbounded select is capped at 1000 rows by PostgREST with no
+      // guaranteed order, so on a large table it can silently miss rows
+      // and reimport them.
+      const earliest = incoming.reduce((min, tx) => (tx.date < min ? tx.date : min), incoming[0].date);
       const { data: existing } = await supabase
-        .from('transactions').select('sf_tx_id, date, description, amount, type');
+        .from('transactions').select('sf_tx_id, date, description, amount, type')
+        .gte('date', earliest);
       const existingIds  = new Set((existing || []).map(t => t.sf_tx_id).filter(Boolean));
       const existingKeys = new Set((existing || []).map(t => `${t.date}|${t.description}|${Number(t.amount)}|${t.type}`));
       const fresh = incoming.filter(tx =>
@@ -121,9 +127,14 @@ export default async function handler(req, res) {
       );
 
       if (fresh.length) {
-        const { error } = await supabase.from('transactions').insert(fresh.map(txToDb));
+        // upsert + ignoreDuplicates makes this safe even if the client-side
+        // sync (useAutoSimpleFINSync) races this cron run — the DB's unique
+        // constraint on sf_tx_id is the real guard, this is just the fast path.
+        const { error, count } = await supabase
+          .from('transactions')
+          .upsert(fresh.map(txToDb), { onConflict: 'sf_tx_id', ignoreDuplicates: true, count: 'exact' });
         if (error) throw error;
-        insertedCount = fresh.length;
+        insertedCount = count ?? fresh.length;
       }
     }
 

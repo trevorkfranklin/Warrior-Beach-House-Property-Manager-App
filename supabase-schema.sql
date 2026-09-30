@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
   notes        TEXT DEFAULT '',
   excluded     BOOLEAN DEFAULT false,
   categorized  BOOLEAN DEFAULT false,
-  sf_tx_id     TEXT,
+  sf_tx_id     TEXT UNIQUE,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 

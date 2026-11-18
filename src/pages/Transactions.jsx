@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Pencil, Trash2, X, Check, Ban, Download, Sparkles } from 'lucide-react';
 
 import { useTransactions } from '../hooks/useTransactions';
@@ -107,6 +108,8 @@ export default function Transactions() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCategorized, setFilterCategorized] = useState('all');
   const [showExcluded, setShowExcluded]     = useState(false);
+  const location = useLocation();
+  const [newIds, setNewIds] = useState(() => location.state?.newIds ? new Set(location.state.newIds) : null);
 
   const [tooltip, setTooltip] = useState(null); // { tx, x, y }
   const showTooltip  = (tx, e) => setTooltip({ tx, x: e.clientX + 16, y: e.clientY + 12 });
@@ -114,7 +117,7 @@ export default function Transactions() {
   const hideTooltip  = ()      => setTooltip(null);
 
   const filtered = useMemo(() =>
-    [...transactions]
+    (newIds ? transactions.filter(tx => newIds.has(tx.id)) : [...transactions])
       .filter(tx => filterType === 'All' || tx.type === filterType)
       .filter(tx => !filterMonth || tx.date.startsWith(filterMonth))
       .filter(tx => !filterDesc || tx.description.toLowerCase().includes(filterDesc.toLowerCase()))
@@ -122,7 +125,7 @@ export default function Transactions() {
       .filter(tx => filterCategorized === 'all' || (filterCategorized === 'uncategorized') === isUncategorized(tx))
       .filter(tx => showExcluded || !tx.excluded)
       .sort((a, b) => new Date(b.date) - new Date(a.date)),
-    [transactions, filterType, filterMonth, filterDesc, filterCategory, filterCategorized, showExcluded]
+    [transactions, newIds, filterType, filterMonth, filterDesc, filterCategory, filterCategorized, showExcluded]
   );
 
   const totals = useMemo(() => {
@@ -302,6 +305,12 @@ export default function Transactions() {
         </div>
       </div>
 
+      {newIds && (
+        <div className="flex items-center justify-between mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm">
+          <span>Showing {newIds.size} new transaction{newIds.size !== 1 ? 's' : ''} from your last import.</span>
+          <button onClick={() => setNewIds(null)} className="text-xs underline hover:text-white">Show all</button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-4 mb-5">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-slate-500">Description</span>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Upload, Check, AlertCircle, RefreshCw, Landmark, Camera, Pencil, Trash2, X } from 'lucide-react';
 import { useTransactions } from '../hooks/useTransactions';
 import { useReservations } from '../hooks/useReservations';
@@ -87,6 +88,7 @@ For each entry return an object with exactly these keys:
 
 export default function Import() {
   const { transactions, bulkAddTransactions, reload: reloadTx } = useTransactions();
+  const navigate = useNavigate();
   const { reservations, bulkAddReservations } = useReservations();
   const [sfAccessUrl, setSfAccessUrl]     = useAppSetting('simplefin_url', '');
   const [autoSyncDate, setAutoSyncDate]   = useAppSetting('auto_sync_date', '');
@@ -172,7 +174,11 @@ export default function Import() {
     const fresh = all.filter(tx => !isDupe(tx, keys));
     setCsvSkipped(all.length - fresh.length);
     await bulkAddTransactions(fresh);
-    setStep('done');
+    if (fresh.length > 0) {
+      navigate('/transactions', { state: { newIds: fresh.map(t => t.id) } });
+    } else {
+      setStep('done');
+    }
   };
   const resetCsv = () => {
     setStep('upload'); setRows([]); setHeaders([]); setPreview([]);
@@ -252,7 +258,11 @@ export default function Import() {
   async function sfImport() {
     const fresh = sfPreview.filter(tx => !tx._dupe).map(({ _dupe, ...tx }) => tx);
     await bulkAddTransactions(fresh);
-    setSfStep('done');
+    if (fresh.length > 0) {
+      navigate('/transactions', { state: { newIds: fresh.map(t => t.id) } });
+    } else {
+      setSfStep('done');
+    }
   }
 
   function sfDisconnect() {
@@ -538,10 +548,10 @@ export default function Import() {
                       <th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Description</th><th className="text-left px-4 py-2">Type</th><th className="text-right px-4 py-2">Amount</th>
                     </tr></thead>
                     <tbody className="divide-y divide-navy-700">
-                      {sfPreview.slice(0, 50).map((tx, i) => (
-                        <tr key={i} className={tx._dupe ? 'opacity-35' : ''}>
+                      {sfFresh.slice(0, 50).map((tx, i) => (
+                        <tr key={i}>
                           <td className="px-4 py-2 text-slate-300">{tx.date}</td>
-                          <td className="px-4 py-2 text-white">{tx.description}{tx._dupe && <span className="ml-2 text-xs text-slate-500 italic">duplicate</span>}</td>
+                          <td className="px-4 py-2 text-white">{tx.description}</td>
                           <td className={`px-4 py-2 ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>{tx.type}</td>
                           <td className="px-4 py-2 text-right text-white">{fmt(tx.amount)}</td>
                         </tr>
@@ -646,17 +656,14 @@ export default function Import() {
                       <th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Description</th><th className="text-left px-4 py-2">Type</th><th className="text-right px-4 py-2">Amount</th>
                     </tr></thead>
                     <tbody className="divide-y divide-navy-700">
-                      {preview.map((tx, i) => {
-                        const dupe = isDupe(tx, keys);
-                        return (
-                          <tr key={i} className={dupe ? 'opacity-35' : ''}>
-                            <td className="px-4 py-2 text-slate-300">{tx.date}</td>
-                            <td className="px-4 py-2 text-white">{tx.description}{dupe && <span className="ml-2 text-xs text-slate-500 italic">duplicate</span>}</td>
-                            <td className={`px-4 py-2 ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>{tx.type}</td>
-                            <td className="px-4 py-2 text-right text-white">{fmt(tx.amount)}</td>
-                          </tr>
-                        );
-                      })}
+                      {preview.filter(tx => !isDupe(tx, keys)).map((tx, i) => (
+                        <tr key={i}>
+                          <td className="px-4 py-2 text-slate-300">{tx.date}</td>
+                          <td className="px-4 py-2 text-white">{tx.description}</td>
+                          <td className={`px-4 py-2 ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>{tx.type}</td>
+                          <td className="px-4 py-2 text-right text-white">{fmt(tx.amount)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
